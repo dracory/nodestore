@@ -89,6 +89,9 @@ func (st *Store) EdgeList(ctx context.Context, query EdgeQueryInterface) ([]Edge
 
 	matched := make([]EdgeInterface, 0, len(entities))
 	for _, entity := range entities {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if query.HasID() && entity.GetID() != query.GetID() {
 			continue
 		}

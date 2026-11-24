@@ -29,10 +29,11 @@ func (st *Store) NodeCount(ctx context.Context, query NodeQueryInterface) (int64
 	return st.entityStore.EntityCount(ctx, entityQuery)
 }
 
-func (st *Store) NodeCreate(ctx context.Context, node NodeInterface) error {
-	if node == nil {
-		return errors.New("node create: node is nil")
-	}
+// nodeCreate persists a node entity. The sentinel guard is applied on
+// the public path (NodeCreate/NodeUpdate); the blob migration calls
+// this directly after extracting legacy plaintext values into
+// credential entities.
+func (st *Store) nodeCreate(ctx context.Context, node NodeInterface) error {
 	impl, ok := node.(*nodeImplementation)
 	if !ok {
 		return errors.New("node create: unsupported implementation")
@@ -45,6 +46,16 @@ func (st *Store) NodeCreate(ctx context.Context, node NodeInterface) error {
 		return err
 	}
 	return st.entityStore.AttributesSet(ctx, impl.entity.GetID(), attrs)
+}
+
+func (st *Store) NodeCreate(ctx context.Context, node NodeInterface) error {
+	if node == nil {
+		return errors.New("node create: node is nil")
+	}
+	if err := validateNodeCredentialSentinels(node); err != nil {
+		return err
+	}
+	return st.nodeCreate(ctx, node)
 }
 
 func (st *Store) NodeDeleteByID(ctx context.Context, id string) error {
@@ -99,6 +110,9 @@ func (st *Store) NodeList(ctx context.Context, query NodeQueryInterface) ([]Node
 
 	matched := make([]NodeInterface, 0, len(entities))
 	for _, entity := range entities {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if query.HasID() && entity.GetID() != query.GetID() {
 			continue
 		}
@@ -135,6 +149,9 @@ func (st *Store) NodeList(ctx context.Context, query NodeQueryInterface) ([]Node
 func (st *Store) NodeUpdate(ctx context.Context, node NodeInterface) error {
 	if node == nil {
 		return errors.New("node update: node is nil")
+	}
+	if err := validateNodeCredentialSentinels(node); err != nil {
+		return err
 	}
 	impl, ok := node.(*nodeImplementation)
 	if !ok {

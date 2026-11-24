@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/dracory/entitystore"
 )
@@ -115,9 +116,11 @@ type StoreInterface interface {
 
 // Store is the nodestore implementation backed by an entity store
 type Store struct {
-	entityStore  entitystore.StoreInterface
-	debugEnabled bool
-	logger       *slog.Logger
+	entityStore      entitystore.StoreInterface
+	credentialCipher CredentialCipher
+	debugEnabled     bool
+	logger           *slog.Logger
+	workflowLocks    sync.Map // map[workflowID]*sync.Mutex — serializes composite writes
 }
 
 // NewStoreOptions define the options for creating a new node store
@@ -126,6 +129,10 @@ type NewStoreOptions struct {
 	EntityStore entitystore.StoreInterface
 	// DebugEnabled enables debug logging
 	DebugEnabled bool
+	// CredentialCipher seals credential values at rest. When nil,
+	// credentials are stored as plaintext JSON (legacy behavior —
+	// prefer NewAESCredentialCipher for real secrets).
+	CredentialCipher CredentialCipher
 }
 
 // NewStore creates a new node store on top of an entity store
@@ -135,10 +142,24 @@ func NewStore(opts NewStoreOptions) (*Store, error) {
 	}
 
 	return &Store{
-		entityStore:  opts.EntityStore,
-		debugEnabled: opts.DebugEnabled,
-		logger:       slog.New(slog.NewTextHandler(os.Stdout, nil)),
+		entityStore:      opts.EntityStore,
+		credentialCipher: opts.CredentialCipher,
+		debugEnabled:     opts.DebugEnabled,
+		logger:           slog.New(slog.NewTextHandler(os.Stdout, nil)),
 	}, nil
+}
+
+// lockWorkflow serializes composite writes for one workflow so
+// concurrent callers cannot interleave their child-entity diff/apply
+// steps (TOCTOU). Returns the unlock func; a no-op for empty ids.
+func (st *Store) lockWorkflow(workflowID string) func() {
+	if workflowID == "" {
+		return func() {}
+	}
+	v, _ := st.workflowLocks.LoadOrStore(workflowID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
 }
 
 func (st *Store) GetEntityStore() entitystore.StoreInterface {

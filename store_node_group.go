@@ -91,6 +91,9 @@ func (st *Store) NodeGroupList(ctx context.Context, query NodeGroupQueryInterfac
 
 	matched := make([]NodeGroupInterface, 0, len(entities))
 	for _, entity := range entities {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if query.HasID() && entity.GetID() != query.GetID() {
 			continue
 		}

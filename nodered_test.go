@@ -15,6 +15,28 @@ func nodeByID(w WorkflowInterface, id string) NodeInterface {
 	return nil
 }
 
+// nodeByType returns the first node of the given type or nil —
+// imports re-mint ids, so tests locate nodes by type, not source id.
+func nodeByType(w WorkflowInterface, nodeType string) NodeInterface {
+	for _, n := range w.GetNodes() {
+		if n.GetType() == nodeType {
+			return n
+		}
+	}
+	return nil
+}
+
+// nodesByType returns all nodes of the given type.
+func nodesByType(w WorkflowInterface, nodeType string) []NodeInterface {
+	var out []NodeInterface
+	for _, n := range w.GetNodes() {
+		if n.GetType() == nodeType {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // edgesFrom returns the outgoing edges of a node as
 // sourceKey -> []targetID.
 func edgesFrom(w WorkflowInterface, id string) map[string][]string {
@@ -58,46 +80,40 @@ func TestNodeREDTypeMapping(t *testing.T) {
 		t.Fatalf("import failed: %v", err)
 	}
 
-	want := map[string]string{
-		"nHttpIn":   "httpTrigger",
-		"nHttpRes":  "httpResponse",
-		"nHttpReq":  "httpRequest",
-		"nLinkIn":   "linkIn",
-		"nLinkOut":  "linkOut",
-		"nLinkCall": "linkCall",
-		"nMqttIn":   "mqttIn",
-		"nMqttOut":  "mqttOut",
-		"nTcpIn":    "tcpIn",
-		"nTcpOut":   "tcpOut",
-		"nUdpIn":    "udpIn",
-		"nUdpOut":   "udpOut",
-		"nWsIn":     "websocketIn",
-		"nWsOut":    "websocketOut",
-		"nFileIn":   "fileIn",
-		"nFile":     "file",
-		"nUnknown":  "fancy-widget",
+	// Every imported type is unique in this fixture, so nodes are
+	// located by their mapped type (ids are re-minted on import).
+	wantTypes := []string{
+		"httpTrigger", "httpResponse", "httpRequest",
+		"linkIn", "linkOut", "linkCall",
+		"mqttIn", "mqttOut",
+		"tcpIn", "tcpOut",
+		"udpIn", "udpOut",
+		"websocketIn", "websocketOut",
+		"fileIn", "file",
+		"fancy-widget",
 	}
-	for id, wantType := range want {
-		n := nodeByID(w, id)
-		if n == nil {
-			t.Fatalf("node %s missing after import", id)
-		}
-		if n.GetType() != wantType {
-			t.Errorf("node %s: type = %q, want %q", id, n.GetType(), wantType)
+	for _, wantType := range wantTypes {
+		if nodeByType(w, wantType) == nil {
+			t.Errorf("node of type %s missing after import", wantType)
 		}
 	}
 
-	// "link call": Node-RED links[0] becomes GoFlow's link field.
-	call := nodeByID(w, "nLinkCall")
-	if stringOf(call.GetData()["link"]) != "nLinkIn" {
-		t.Errorf("linkCall data.link = %v, want nLinkIn", call.GetData()["link"])
+	// "link call": Node-RED links[0] becomes GoFlow's link field,
+	// remapped to the linkIn node's NEW id.
+	call := nodeByType(w, "linkCall")
+	linkIn := nodeByType(w, "linkIn")
+	if call == nil || linkIn == nil {
+		t.Fatalf("link nodes missing after import")
+	}
+	if stringOf(call.GetData()["link"]) != linkIn.GetID() {
+		t.Errorf("linkCall data.link = %v, want %v (remapped linkIn id)", call.GetData()["link"], linkIn.GetID())
 	}
 	if _, still := call.GetData()["links"]; still {
 		t.Errorf("linkCall data still carries Node-RED links array: %v", call.GetData()["links"])
 	}
 
 	// The unknown node keeps its config verbatim.
-	unk := nodeByID(w, "nUnknown")
+	unk := nodeByType(w, "fancy-widget")
 	if unk.GetData()["conf"] != float64(1) {
 		t.Errorf("unknown node lost config: %v", unk.GetData())
 	}
@@ -169,32 +185,49 @@ func TestNodeREDMultiTabSwitch(t *testing.T) {
 		t.Fatalf("import failed: %v", err)
 	}
 
-	// z -> module mapping
-	wantModule := map[string]string{
-		"sw": "First", "dbgA": "First",
-		"dbgB": "Second", "dbgC": "Second", "inj": "Second",
+	// z -> module mapping (ids are re-minted on import; nodes are
+	// located by type and their data.module label survives verbatim).
+	sw := nodeByType(w, "switch")
+	inj := nodeByType(w, "inject")
+	if sw == nil || inj == nil {
+		t.Fatalf("switch or inject node missing after import")
 	}
-	for id, mod := range wantModule {
-		n := nodeByID(w, id)
-		if n == nil {
-			t.Fatalf("node %s missing", id)
-		}
-		if stringOf(n.GetData()["module"]) != mod {
-			t.Errorf("node %s module = %q, want %q", id, n.GetData()["module"], mod)
-		}
+	if stringOf(sw.GetData()["module"]) != "First" {
+		t.Errorf("switch module = %q, want First", sw.GetData()["module"])
+	}
+	if stringOf(inj.GetData()["module"]) != "Second" {
+		t.Errorf("inject module = %q, want Second", inj.GetData()["module"])
+	}
+	debugs := nodesByType(w, "debug")
+	if len(debugs) != 3 {
+		t.Fatalf("expected 3 debug nodes, got %d", len(debugs))
+	}
+	mods := map[string]int{}
+	for _, d := range debugs {
+		mods[stringOf(d.GetData()["module"])]++
+	}
+	if mods["First"] != 1 || mods["Second"] != 2 {
+		t.Errorf("debug module spread = %v, want First:1 Second:2", mods)
 	}
 
-	// wires[i] -> output_{i+1} fan-out, including two targets on one port
-	sw := edgesFrom(w, "sw")
-	if len(sw["output_1"]) != 1 || sw["output_1"][0] != "dbgA" {
-		t.Errorf("switch output_1 wires = %v, want [dbgA]", sw["output_1"])
+	// wires[i] -> output_{i+1} fan-out, including two targets on one
+	// port. Edge targets are the remapped ids — resolve them and
+	// assert the shape (1 target on port 1, 2 on port 2).
+	swEdges := edgesFrom(w, sw.GetID())
+	if len(swEdges["output_1"]) != 1 {
+		t.Errorf("switch output_1 wires = %v, want 1 target", swEdges["output_1"])
 	}
-	if len(sw["output_2"]) != 2 || sw["output_2"][0] != "dbgB" || sw["output_2"][1] != "dbgC" {
-		t.Errorf("switch output_2 wires = %v, want [dbgB dbgC]", sw["output_2"])
+	if len(swEdges["output_2"]) != 2 {
+		t.Errorf("switch output_2 wires = %v, want 2 targets", swEdges["output_2"])
+	}
+	for _, tid := range append(swEdges["output_1"], swEdges["output_2"]...) {
+		target := nodeByID(w, tid)
+		if target == nil || target.GetType() != "debug" {
+			t.Errorf("switch edge target %q does not resolve to a debug node", tid)
+		}
 	}
 
 	// Disabled flag preserved verbatim in data.
-	inj := nodeByID(w, "inj")
 	if inj.GetData()["d"] != true {
 		t.Errorf("disabled flag not preserved: d = %v", inj.GetData()["d"])
 	}
@@ -218,14 +251,16 @@ func TestNodeREDLinkNodesWiring(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import failed: %v", err)
 	}
-	if nodeByID(w, "lout").GetType() != "linkOut" || nodeByID(w, "lin").GetType() != "linkIn" {
+	lout, lin, dbg := nodeByType(w, "linkOut"), nodeByType(w, "linkIn"), nodeByType(w, "debug")
+	if lout == nil || lin == nil || dbg == nil {
 		t.Fatalf("link types not mapped: %+v", w.GetNodes())
 	}
-	if got := arrayOf(nodeByID(w, "lout").GetData()["links"]); len(got) != 1 || stringOf(got[0]) != "lin" {
-		t.Fatalf("linkOut links not preserved: %v", nodeByID(w, "lout").GetData())
+	// linkOut's links[0] is remapped to the linkIn node's NEW id.
+	if got := arrayOf(lout.GetData()["links"]); len(got) != 1 || stringOf(got[0]) != lin.GetID() {
+		t.Fatalf("linkOut links not preserved/remapped: %v", lout.GetData())
 	}
-	if got := edgesFrom(w, "lin")["output_1"]; len(got) != 1 || got[0] != "dbg" {
-		t.Fatalf("linkIn downstream wiring missing: %v", edgesFrom(w, "lin"))
+	if got := edgesFrom(w, lin.GetID())["output_1"]; len(got) != 1 || got[0] != dbg.GetID() {
+		t.Fatalf("linkIn downstream wiring missing: %v", edgesFrom(w, lin.GetID()))
 	}
 }
 
@@ -250,13 +285,13 @@ func TestNodeREDTypeMappingRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(raw, &items); err != nil {
 		t.Fatalf("bad export JSON: %v", err)
 	}
-	got := map[string]string{}
+	got := map[string]bool{}
 	for _, it := range items {
-		got[stringOf(it["id"])] = stringOf(it["type"])
+		got[stringOf(it["type"])] = true
 	}
-	for id, wt := range map[string]string{"h": "http in", "r": "http response", "m": "mqtt out"} {
-		if got[id] != wt {
-			t.Errorf("round-trip type for %s = %q, want %q", id, got[id], wt)
+	for _, wt := range []string{"http in", "http response", "mqtt out"} {
+		if !got[wt] {
+			t.Errorf("round-trip type %q missing from export", wt)
 		}
 	}
 }

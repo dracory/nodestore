@@ -71,8 +71,10 @@ func NewCredential(workflowID, nodeID string) CredentialInterface {
 }
 
 // credentialFromEntity rebuilds a credential from a persisted entity
-// and its attributes.
-func credentialFromEntity(entity entitystore.EntityInterface, attrs map[string]string) (CredentialInterface, error) {
+// and its attributes. Sealed ATTRIBUTE_DATA values are opened through
+// the store's cipher; rows written before a cipher was configured
+// decode as legacy plaintext.
+func (st *Store) credentialFromEntity(entity entitystore.EntityInterface, attrs map[string]string) (CredentialInterface, error) {
 	c := &credentialImplementation{
 		entity:     entity,
 		workflowID: attrs[ATTRIBUTE_WORKFLOW_ID],
@@ -80,23 +82,42 @@ func credentialFromEntity(entity entitystore.EntityInterface, attrs map[string]s
 		values:     map[string]string{},
 	}
 	if raw := attrs[ATTRIBUTE_DATA]; raw != "" {
-		if err := json.Unmarshal([]byte(raw), &c.values); err != nil {
+		payload := []byte(raw)
+		if st.credentialCipher != nil {
+			decrypted, err := st.credentialCipher.Decrypt(raw)
+			if err != nil {
+				return nil, err
+			}
+			payload = decrypted
+		}
+		if err := json.Unmarshal(payload, &c.values); err != nil {
 			return nil, err
 		}
 	}
 	return c, nil
 }
 
-// attributes serializes the credential's domain fields.
-func (c *credentialImplementation) attributes() (map[string]string, error) {
+// credentialAttributes serializes the credential's domain fields. The
+// value map is sealed through the store's cipher when one is
+// configured; without a cipher it persists as plaintext JSON (legacy
+// behavior).
+func (st *Store) credentialAttributes(c *credentialImplementation) (map[string]string, error) {
 	data, err := json.Marshal(c.values)
 	if err != nil {
 		return nil, err
 	}
+	stored := string(data)
+	if st.credentialCipher != nil {
+		sealed, err := st.credentialCipher.Encrypt(data)
+		if err != nil {
+			return nil, err
+		}
+		stored = sealed
+	}
 	return map[string]string{
 		ATTRIBUTE_WORKFLOW_ID: c.workflowID,
 		ATTRIBUTE_NODE_ID:     c.nodeID,
-		ATTRIBUTE_DATA:        string(data),
+		ATTRIBUTE_DATA:        stored,
 	}, nil
 }
 

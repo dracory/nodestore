@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"log"
 	"sort"
+	"strings"
 	"uuid"
 )
 
@@ -303,7 +304,82 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 		}
 	}
 
+	// Imported ids come from an untrusted document — re-mint them all
+	// so an import can never collide with (or target) existing
+	// entities, and rewrite every intra-document reference to match.
+	remapImportedWorkflowIDs(w)
+
 	return w, nil
+}
+
+// remapImportedWorkflowIDs re-mints every id carried in from an
+// imported document — regular nodes, subflow definitions and their
+// internal graphs — and rewrites edges, node-id references, group
+// membership and "subflow:<defID>" instance types to the new ids.
+// External (dangling) references pass through untouched.
+func remapImportedWorkflowIDs(w WorkflowInterface) {
+	nodeIDs := map[string]string{}
+	defIDs := map[string]string{}
+	for _, n := range w.GetNodes() {
+		if n.GetType() == subflowDefNodeType {
+			defIDs[n.GetID()] = generateID()
+		} else {
+			nodeIDs[n.GetID()] = generateID()
+		}
+	}
+
+	for _, n := range w.GetNodes() {
+		if n.GetType() == subflowDefNodeType {
+			innerIDs := map[string]string{}
+			for _, rawNode := range arrayOf(n.GetData()["nodes"]) {
+				if m, ok := rawNode.(map[string]any); ok {
+					if id := stringOf(m["id"]); id != "" {
+						innerIDs[id] = generateID()
+					}
+				}
+			}
+			n.SetID(defIDs[n.GetID()])
+			n.SetData(rewriteDefData(n.GetData(), innerIDs, defIDs))
+			continue
+		}
+		data := n.GetData()
+		for _, key := range nodeRefKeys {
+			if rv, ok := data[key]; ok {
+				data[key] = remapIDRefs(rv, nodeIDs)
+			}
+		}
+		if IsSubflowInstance(n.GetType()) {
+			old := strings.TrimPrefix(n.GetType(), subflowTypePrefix)
+			if mapped, ok := defIDs[old]; ok {
+				n.SetType(subflowTypePrefix + mapped)
+			}
+		}
+		n.SetID(nodeIDs[n.GetID()])
+	}
+
+	for _, e := range w.GetEdges() {
+		if mapped, ok := nodeIDs[e.GetSource()]; ok {
+			e.SetSource(mapped)
+		}
+		if mapped, ok := nodeIDs[e.GetTarget()]; ok {
+			e.SetTarget(mapped)
+		}
+	}
+
+	for _, g := range arrayOf(w.GetView()["groups"]) {
+		gm, ok := g.(map[string]any)
+		if !ok {
+			continue
+		}
+		gm["id"] = generateID()
+		var memberIDs []any
+		for _, m := range arrayOf(gm["nodeIds"]) {
+			if mapped, ok := nodeIDs[stringOf(m)]; ok {
+				memberIDs = append(memberIDs, mapped)
+			}
+		}
+		gm["nodeIds"] = memberIDs
+	}
 }
 
 // nodeREDToNode converts one flat Node-RED node object into a backend

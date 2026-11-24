@@ -38,6 +38,12 @@ func (st *Store) DeployRecordCreate(ctx context.Context, record DeployRecordInte
 	if !ok {
 		return errors.New("deploy record create: unsupported implementation")
 	}
+	// Deploy records must only ever carry sentinel markers — a
+	// snapshot taken after credential injection would otherwise
+	// persist every secret in plaintext.
+	if err := validateFlowJSONCredentials(record.GetFlow()); err != nil {
+		return err
+	}
 	if err := st.entityStore.EntityCreate(ctx, impl.entity); err != nil {
 		return err
 	}
@@ -131,6 +137,9 @@ func (st *Store) DeployRecordList(ctx context.Context, query DeployRecordQueryIn
 
 	matched := make([]DeployRecordInterface, 0, len(entities))
 	for _, entity := range entities {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if query.HasID() && entity.GetID() != query.GetID() {
 			continue
 		}

@@ -1,6 +1,102 @@
 package nodestore
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
+
+// plaintextCredentialKey returns the first credential-typed config key
+// in data that holds a real (non-sentinel, non-empty) string value.
+// Such values must never reach storage — they belong in credential
+// entities behind the sentinel marker.
+func plaintextCredentialKey(nodeType string, data map[string]any) string {
+	for _, k := range CredentialKeys(nodeType) {
+		s, isStr := data[k].(string)
+		if isStr && s != "" && s != CredentialSentinel {
+			return k
+		}
+	}
+	return ""
+}
+
+// validateNodeCredentialSentinels rejects a node whose data carries a
+// plaintext credential value (including inner nodes of subflow
+// definitions). Enforced on every write so secrets can never be
+// persisted in node documents by mistake.
+func validateNodeCredentialSentinels(n NodeInterface) error {
+	if n == nil {
+		return nil
+	}
+	if key := plaintextCredentialKey(n.GetType(), n.GetData()); key != "" {
+		return fmt.Errorf("node %q (%s): credential key %q holds a plaintext value — persist secrets via Credential entities, not node data", n.GetID(), n.GetType(), key)
+	}
+	if n.GetType() == subflowDefNodeType {
+		for _, m := range innerNodeData(n.GetData()) {
+			inner, _ := m["data"].(map[string]any)
+			if key := plaintextCredentialKey(stringOf(m["type"]), inner); key != "" {
+				return fmt.Errorf("subflow definition %q: inner node %q (%s) credential key %q holds a plaintext value", n.GetID(), stringOf(m["id"]), stringOf(m["type"]), key)
+			}
+		}
+	}
+	return nil
+}
+
+// validateWorkflowCredentialSentinels applies the node check to every
+// node of a workflow.
+func validateWorkflowCredentialSentinels(w WorkflowInterface) error {
+	for _, n := range w.GetNodes() {
+		if err := validateNodeCredentialSentinels(n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateFlowJSONCredentials scans a raw flow document (deploy
+// record snapshot — backend {type, data} or Node-RED flat shape) for
+// plaintext credential values. Returns the offending key/type.
+func validateFlowJSONCredentials(raw string) error {
+	var doc any
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return nil // not parseable as JSON — nothing to scan
+	}
+	if key, typ, found := scanJSONForPlaintextCredential(doc); found {
+		return fmt.Errorf("flow document: node type %q carries credential key %q with a plaintext value — snapshot must contain sentinel markers only", typ, key)
+	}
+	return nil
+}
+
+// scanJSONForPlaintextCredential walks decoded JSON looking for node
+// objects — anything with a string "type" — and checks their
+// credential keys both inline (Node-RED flat shape) and under "data"
+// (backend/inner-node shape). Recurses into nested structures so
+// subflow definition graphs are covered.
+func scanJSONForPlaintextCredential(v any) (key, nodeType string, found bool) {
+	switch t := v.(type) {
+	case map[string]any:
+		typ := stringOf(t["type"])
+		if key := plaintextCredentialKey(typ, t); key != "" {
+			return key, typ, true
+		}
+		if d, ok := t["data"].(map[string]any); ok {
+			if key := plaintextCredentialKey(typ, d); key != "" {
+				return key, typ, true
+			}
+		}
+		for _, v2 := range t {
+			if key, typ, found := scanJSONForPlaintextCredential(v2); found {
+				return key, typ, true
+			}
+		}
+	case []any:
+		for _, item := range t {
+			if key, typ, found := scanJSONForPlaintextCredential(item); found {
+				return key, typ, true
+			}
+		}
+	}
+	return "", "", false
+}
 
 // credentials.go ports flowadmin/storage/credentials.go onto the
 // nodestore domain types: credential values live outside the workflow

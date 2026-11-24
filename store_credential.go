@@ -34,7 +34,7 @@ func (st *Store) CredentialCreate(ctx context.Context, credential CredentialInte
 	if !ok {
 		return errors.New("credential create: unsupported implementation")
 	}
-	attrs, err := impl.attributes()
+	attrs, err := st.credentialAttributes(impl)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (st *Store) CredentialFindByID(ctx context.Context, id string) (CredentialI
 	if err != nil {
 		return nil, err
 	}
-	return credentialFromEntity(entity, attrs)
+	return st.credentialFromEntity(entity, attrs)
 }
 
 // CredentialFindByNode returns the single credential entity for a
@@ -124,6 +124,9 @@ func (st *Store) CredentialList(ctx context.Context, query CredentialQueryInterf
 
 	matched := make([]CredentialInterface, 0, len(entities))
 	for _, entity := range entities {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if query.HasID() && entity.GetID() != query.GetID() {
 			continue
 		}
@@ -137,7 +140,7 @@ func (st *Store) CredentialList(ctx context.Context, query CredentialQueryInterf
 		if query.HasNodeID() && attrs[ATTRIBUTE_NODE_ID] != query.GetNodeID() {
 			continue
 		}
-		credential, err := credentialFromEntity(entity, attrs)
+		credential, err := st.credentialFromEntity(entity, attrs)
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +171,7 @@ func (st *Store) CredentialUpdate(ctx context.Context, credential CredentialInte
 	if !ok {
 		return errors.New("credential update: unsupported implementation")
 	}
-	attrs, err := impl.attributes()
+	attrs, err := st.credentialAttributes(impl)
 	if err != nil {
 		return err
 	}

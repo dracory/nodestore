@@ -36,6 +36,9 @@ func (st *Store) WorkflowCreate(ctx context.Context, workflow WorkflowInterface)
 	if workflow == nil {
 		return errors.New("workflow create: workflow is nil")
 	}
+	if err := validateWorkflowCredentialSentinels(workflow); err != nil {
+		return err
+	}
 	impl, ok := workflow.(*workflowImplementation)
 	if !ok {
 		return errors.New("workflow create: unsupported implementation")
@@ -67,6 +70,8 @@ func (st *Store) WorkflowCreate(ctx context.Context, workflow WorkflowInterface)
 // WorkflowDeleteByID deletes the workflow AND its child node/edge
 // entities (cascade — documented behavior; children are never orphaned).
 func (st *Store) WorkflowDeleteByID(ctx context.Context, id string) error {
+	unlock := st.lockWorkflow(id)
+	defer unlock()
 	if err := st.deleteWorkflowChildren(ctx, id); err != nil {
 		return err
 	}
@@ -124,6 +129,9 @@ func (st *Store) WorkflowList(ctx context.Context, query WorkflowQueryInterface)
 
 	matched := make([]WorkflowInterface, 0, len(entities))
 	for _, entity := range entities {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		workflow, err := st.workflowFromEntityWithAttrs(ctx, entity, entity.GetTempKeys())
 		if err != nil {
 			return nil, err
@@ -161,6 +169,11 @@ func (st *Store) WorkflowUpdate(ctx context.Context, workflow WorkflowInterface)
 	if workflow == nil {
 		return errors.New("workflow update: workflow is nil")
 	}
+	if err := validateWorkflowCredentialSentinels(workflow); err != nil {
+		return err
+	}
+	unlock := st.lockWorkflow(workflow.GetID())
+	defer unlock()
 	impl, ok := workflow.(*workflowImplementation)
 	if !ok {
 		return errors.New("workflow update: unsupported implementation")

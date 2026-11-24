@@ -29,6 +29,9 @@ func (st *Store) MigrateWorkflowBlobAttributes(ctx context.Context) (int, error)
 
 	migrated := 0
 	for _, entity := range entities {
+		if err := ctx.Err(); err != nil {
+			return migrated, err
+		}
 		attrs := entity.GetTempKeys()
 		if len(attrs) == 0 {
 			attrs, err = st.entityAttributes(ctx, entity.GetID())
@@ -65,7 +68,11 @@ func (st *Store) MigrateWorkflowBlobAttributes(ctx context.Context) (int, error)
 					newID = mapped
 				}
 				// Skip if a child entity with this ID already exists.
-				if existing, _ := st.entityStore.EntityFindByID(ctx, newID); existing != nil {
+				existing, err := st.entityStore.EntityFindByID(ctx, newID)
+				if err != nil {
+					return migrated, err
+				}
+				if existing != nil {
 					continue
 				}
 				node := nodeFromJSON(j).SetWorkflowID(workflowID).SetID(newID)
@@ -77,7 +84,21 @@ func (st *Store) MigrateWorkflowBlobAttributes(ctx context.Context) (int, error)
 						}
 					}
 				}
-				if err := st.NodeCreate(ctx, node); err != nil {
+				// Legacy blobs may carry plaintext credential values —
+				// move them into credential entities (sentinel markers
+				// stay in node data) before the guarded node create.
+				tmp := NewWorkflow("migration").SetNodes([]NodeInterface{node})
+				if creds := ExtractWorkflowCredentials(tmp, nil); len(creds) > 0 {
+					for nodeID, values := range creds {
+						if len(values) == 0 {
+							continue
+						}
+						if err := st.CredentialCreate(ctx, NewCredential(workflowID, nodeID).SetValues(values)); err != nil {
+							return migrated, err
+						}
+					}
+				}
+				if err := st.nodeCreate(ctx, node); err != nil {
 					return migrated, err
 				}
 			}
@@ -98,7 +119,11 @@ func (st *Store) MigrateWorkflowBlobAttributes(ctx context.Context) (int, error)
 				edge := edgeFromJSON(j).SetWorkflowID(workflowID)
 				// NewEdge already shortened over-length ids, so the
 				// dedup check keys on the id that will be persisted.
-				if existing, _ := st.entityStore.EntityFindByID(ctx, edge.GetID()); existing != nil {
+				existing, err := st.entityStore.EntityFindByID(ctx, edge.GetID())
+				if err != nil {
+					return migrated, err
+				}
+				if existing != nil {
 					continue
 				}
 				if err := st.EdgeCreate(ctx, edge); err != nil {

@@ -77,6 +77,9 @@ func (st *Store) WorkflowGroupList(ctx context.Context, query WorkflowGroupQuery
 
 	matched := make([]WorkflowGroupInterface, 0, len(entities))
 	for _, entity := range entities {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if query.HasID() && entity.GetID() != query.GetID() {
 			continue
 		}

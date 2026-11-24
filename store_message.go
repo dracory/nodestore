@@ -78,6 +78,9 @@ func (st *Store) MessageList(ctx context.Context, query MessageQueryInterface) (
 
 	matched := make([]MessageInterface, 0, len(entities))
 	for _, entity := range entities {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		message, err := messageFromEntity(entity, entity.GetTempKeys())
 		if err != nil {
 			return nil, err
