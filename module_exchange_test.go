@@ -363,7 +363,7 @@ func TestImportModuleRejectsBadPayload(t *testing.T) {
 	if _, err := ImportModule(w, []byte(`[1,2,3]`)); err == nil {
 		t.Fatal("expected error for non-envelope JSON")
 	}
-	if _, err := ImportModule(w, []byte(`{"goflow":"module","version":99}`)); err == nil {
+	if _, err := ImportModule(w, []byte(`{"nodestore":"module","version":99}`)); err == nil {
 		t.Fatal("expected error for newer version")
 	}
 	if _, err := ExportModule(w, "nope"); err == nil {

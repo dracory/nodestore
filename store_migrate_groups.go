@@ -6,7 +6,7 @@ import (
 )
 
 // store_migrate_groups.go holds the group-persistence migrations for
-// the P4 cutover (task 2026_11_24_cutover_p4_entities):
+// the P4 cutover (task cutover_p4_entities):
 //
 //   - MigrateWorkflowGroupsConfig moves sidebar workflow groupings out
 //     of the global-config JSON blob ("workflowGroups" section) into

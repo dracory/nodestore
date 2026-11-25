@@ -11,7 +11,7 @@ import (
 // role:"subflow" template) moves between workflows as a portable
 // envelope. Format decisions:
 //
-//   - Payload: a versioned GoFlow module envelope, not a Node-RED
+//   - Payload: a versioned module envelope, not a Node-RED
 //     array. The envelope keeps everything a Node-RED tab would lose:
 //     edge ids, view.groups, module meta (role/enabled/env) and the
 //     subflow definitions the module's instances need. Node-RED
@@ -32,7 +32,7 @@ import (
 //     clobbering the original. Label collisions get an " (imported)"
 //     suffix, then a numeric one.
 
-// moduleExportFormat is the envelope's "goflow" marker value.
+// moduleExportFormat is the "nodestore" field's marker value.
 const moduleExportFormat = "module"
 
 // moduleExportVersion is the current envelope version. Importers
@@ -42,7 +42,7 @@ const moduleExportVersion = 1
 // ModuleExport is the portable single-module payload.
 type ModuleExport struct {
 	// Format identifies the envelope kind; always "module".
-	Format string `json:"goflow"`
+	Format string `json:"nodestore"`
 	// Version is the envelope schema version.
 	Version int `json:"version"`
 	// Module carries the meta entity {id,label,role,enabled,env}.
@@ -68,7 +68,7 @@ type ModuleExport struct {
 // layout, but with the concrete nodeJSON/edgeJSON shapes so the
 // interface-typed slices marshal and unmarshal faithfully.
 type moduleExportJSON struct {
-	Format   string         `json:"goflow"`
+	Format   string         `json:"nodestore"`
 	Version  int            `json:"version"`
 	Module   map[string]any `json:"module"`
 	Nodes    []nodeJSON     `json:"nodes"`
@@ -664,7 +664,7 @@ func ImportModule(w WorkflowInterface, raw []byte) ([]string, error) {
 		return nil, fmt.Errorf("invalid module export JSON: %w", err)
 	}
 	if payload.Format != moduleExportFormat {
-		return nil, fmt.Errorf("not a GoFlow module export (goflow: %q)", payload.Format)
+		return nil, fmt.Errorf("not a module export (nodestore: %q)", payload.Format)
 	}
 	if payload.Version > moduleExportVersion {
 		return nil, fmt.Errorf("module export version %d is newer than supported %d", payload.Version, moduleExportVersion)

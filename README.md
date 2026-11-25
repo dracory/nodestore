@@ -4,9 +4,6 @@ Domain model and persistence for flow-based (Node-RED-style) workflows.
 Everything crosses interfaces — consumers depend on the contracts,
 never on the concrete `Store` or entity structs.
 
-> Currently developed inside the goflow module as `pkg/nodestore`; this
-> repository is the extraction target once the package is fully working.
-
 ## What it provides
 
 - `StoreInterface` — persistence contract for the whole domain, backed

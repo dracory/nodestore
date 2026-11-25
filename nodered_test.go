@@ -49,9 +49,9 @@ func edgesFrom(w WorkflowInterface, id string) map[string][]string {
 	return out
 }
 
-// TestNodeREDTypeMapping verifies the Node-RED -> GoFlow type-name
-// table: every core type with a GoFlow equivalent lands mapped, a
-// "link call" gets its links array folded into GoFlow's "link" field,
+// TestNodeREDTypeMapping verifies the Node-RED -> engine type-name
+// table: every core type with an engine equivalent lands mapped, a
+// "link call" gets its links array folded into the engine's "link" field,
 // and an unknown type keeps its raw spelling.
 func TestNodeREDTypeMapping(t *testing.T) {
 	flowJSON := `[
@@ -98,7 +98,7 @@ func TestNodeREDTypeMapping(t *testing.T) {
 		}
 	}
 
-	// "link call": Node-RED links[0] becomes GoFlow's link field,
+	// "link call": Node-RED links[0] becomes the engine's link field,
 	// remapped to the linkIn node's NEW id.
 	call := nodeByType(w, "linkCall")
 	linkIn := nodeByType(w, "linkIn")
@@ -119,7 +119,7 @@ func TestNodeREDTypeMapping(t *testing.T) {
 	}
 }
 
-// TestNodeREDExportTypeMapping verifies the reverse table: GoFlow
+// TestNodeREDExportTypeMapping verifies the reverse table: engine
 // executor types export back to Node-RED spellings and the linkCall
 // link field becomes a links array again.
 func TestNodeREDExportTypeMapping(t *testing.T) {
@@ -160,7 +160,7 @@ func TestNodeREDExportTypeMapping(t *testing.T) {
 		t.Errorf("linkCall exported links = %v, want [c]", got["b"]["links"])
 	}
 	if _, still := got["b"]["link"]; still {
-		t.Errorf("linkCall export still carries GoFlow link field")
+		t.Errorf("linkCall export still carries engine link field")
 	}
 }
 

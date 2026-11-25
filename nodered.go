@@ -10,7 +10,7 @@ import (
 	"uuid"
 )
 
-// This file converts between GoFlow's {nodes, edges} workflow shape
+// This file converts between the engine's {nodes, edges} workflow shape
 // and the Node-RED flow JSON array. Node-RED stores a flow file as a
 // flat array of objects:
 //
@@ -20,7 +20,7 @@ import (
 //     z is the owning tab or subflow id, wires[i] is the list of
 //     target node ids fed by output port i+1
 //
-// GoFlow keeps subflow definitions as a node of type "subflow" whose
+// The engine keeps subflow definitions as a node of type "subflow" whose
 // Data carries in/out/env plus "nodes"/"edges" for the internal
 // graph; Node-RED instead stores the internal nodes flat in the array
 // with z = <defId>. ImportNodeRED folds those in; ExportNodeRED
@@ -33,7 +33,7 @@ func generateID() string {
 	return uuid.NewV7().String()
 }
 
-// nodeREDTabMap maps a GoFlow module name to the object id of the tab
+// nodeREDTabMap maps an engine module name to the object id of the tab
 // created for it on export.
 type nodeREDTabMap map[string]string
 
@@ -45,14 +45,14 @@ func nodeREDTabID(module string) string {
 	return fmt.Sprintf("tab%08x", h.Sum32())
 }
 
-// nodeREDTypeToGoFlow maps Node-RED core type names that differ from
-// GoFlow's ids to their GoFlow equivalents. Node-RED types already
-// spelled the GoFlow way (inject, debug, function, switch, change,
+// nodeREDTypeToModule maps Node-RED core type names that differ from
+// the engine's ids to their engine equivalents. Node-RED types already
+// spelled the engine's way (inject, debug, function, switch, change,
 // delay, template, join, split, batch, sort, range, rbe, trigger,
 // exec, catch, status, complete, junction, json, xml, csv, yaml,
-// file) need no entry — they import verbatim. Types with no GoFlow
+// file) need no entry — they import verbatim. Types with no engine
 // equivalent stay untouched and land as unknown nodes.
-var nodeREDTypeToGoFlow = map[string]string{
+var nodeREDTypeToModule = map[string]string{
 	"http in":       "httpTrigger",
 	"http response": "httpResponse",
 	"http request":  "httpRequest",
@@ -72,36 +72,36 @@ var nodeREDTypeToGoFlow = map[string]string{
 	"file in":       "fileIn",
 }
 
-// goFlowTypeToNodeRED is the inverse of nodeREDTypeToGoFlow, used on
-// export so GoFlow nodes emit the Node-RED spellings.
-var goFlowTypeToNodeRED = func() map[string]string {
-	m := make(map[string]string, len(nodeREDTypeToGoFlow))
-	for nr, gf := range nodeREDTypeToGoFlow {
-		m[gf] = nr
+// moduleTypeToNodeRED is the inverse of nodeREDTypeToModule, used on
+// export so engine nodes emit the Node-RED spellings.
+var moduleTypeToNodeRED = func() map[string]string {
+	m := make(map[string]string, len(nodeREDTypeToModule))
+	for nr, mod := range nodeREDTypeToModule {
+		m[mod] = nr
 	}
 	return m
 }()
 
-// importType maps a Node-RED type name to the GoFlow executor type;
+// importType maps a Node-RED type name to the engine executor type;
 // unmapped names pass through verbatim (unknown-node handling).
 func importType(nrType string) string {
-	if gf, ok := nodeREDTypeToGoFlow[nrType]; ok {
-		return gf
+	if mod, ok := nodeREDTypeToModule[nrType]; ok {
+		return mod
 	}
 	return nrType
 }
 
-// exportType maps a GoFlow executor type back to the Node-RED spelling;
+// exportType maps an engine executor type back to the Node-RED spelling;
 // unmapped names pass through verbatim.
-func exportType(gfType string) string {
-	if nr, ok := goFlowTypeToNodeRED[gfType]; ok {
+func exportType(modType string) string {
+	if nr, ok := moduleTypeToNodeRED[modType]; ok {
 		return nr
 	}
-	return gfType
+	return modType
 }
 
 // importLinkCallData translates the Node-RED "link call" config shape —
-// the target linkIn id lives in links[0] — into GoFlow's linkCall
+// the target linkIn id lives in links[0] — into the engine's linkCall
 // "link" field. Other fields pass through unchanged.
 func importLinkCallData(data map[string]any) {
 	if stringOf(data["link"]) == "" {
@@ -112,7 +112,7 @@ func importLinkCallData(data map[string]any) {
 	delete(data, "links")
 }
 
-// exportLinkCallData rewrites an emitted "link call" object's GoFlow
+// exportLinkCallData rewrites an emitted "link call" object's engine
 // "link" field back into Node-RED's links array.
 func exportLinkCallData(obj map[string]any) {
 	if link := stringOf(obj["link"]); link != "" {
@@ -122,7 +122,7 @@ func exportLinkCallData(obj map[string]any) {
 }
 
 // ImportNodeRED converts a Node-RED flow JSON array into a workflow.
-// Regular nodes keep their config keys verbatim in Data (GoFlow node
+// Regular nodes keep their config keys verbatim in Data (engine node
 // configs use the Node-RED field names); tab membership becomes
 // Data["module"]; wires become edges. Subflow definitions and their
 // internal nodes fold into a single type:"subflow" node.
@@ -151,7 +151,7 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 			if truthyFlag(obj["disabled"]) {
 				tabDisabled[tabID] = true
 			}
-			// Node-RED stores flow env on the tab object. GoFlow
+			// Node-RED stores flow env on the tab object. The engine
 			// folds every tab into one workflow, so tab envs merge
 			// into the workflow-level view.env (documented divergence:
 			// per-tab scoping collapses to per-workflow).
@@ -161,7 +161,7 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 		case "subflow":
 			defObjs = append(defObjs, obj)
 		case "group":
-			// Node-RED groups fold into GoFlow's view.groups model
+			// Node-RED groups fold into the engine's view.groups model
 			// (view boxes with member ids + an optional disabled flag).
 			groupObjs = append(groupObjs, obj)
 		case "global", "global-config":
@@ -255,7 +255,7 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 		}
 	}
 
-	// Disabled tabs map onto GoFlow's per-module disabled flag:
+	// Disabled tabs map onto the engine's per-module disabled flag:
 	// view.disabledModules lists the module references — labels here,
 	// since import predates the id-keyed model; the editor migrates
 	// them to ids on the next save, and the engine resolves either
