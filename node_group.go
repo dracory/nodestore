@@ -10,7 +10,7 @@ import (
 // == INTERFACE ===============================================================
 
 // NodeGroupInterface is the entity form of an editor view group (one of
-// the view.groups entries: {id, name, x, y, w, h, disabled, module,
+// the view.groups entries: {id, name, x, y, w, h, disabled, childFlow,
 // nodeIds}). Membership is NOT stored here — it lives as group_id on
 // the member node entities (GOD ruling 2026-11-24); the geometry and
 // flags ride in the data attribute so the wire shape round-trips.
@@ -25,7 +25,7 @@ type NodeGroupInterface interface {
 	SetName(name string) NodeGroupInterface
 
 	// GetData returns the group's freeform view payload (x, y, w, h,
-	// disabled, module, env) — the view.groups entry minus id/name/
+	// disabled, childFlow, env) — the view.groups entry minus id/name/
 	// nodeIds.
 	GetData() map[string]any
 	SetData(data map[string]any) NodeGroupInterface

@@ -48,7 +48,7 @@ const DESC = "desc"
 // (carbon.Now(carbon.UTC).ToDateTimeString)
 const datetimeLayout = "2006-01-02 15:04:05"
 
-// EntityTypeConfig is the entity type for module-level key/value config
+// EntityTypeConfig is the entity type for child-flow-level key/value config
 const EntityTypeConfig = "config"
 
 // AttributeConfigValue holds a config entry's raw string payload

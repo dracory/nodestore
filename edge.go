@@ -39,7 +39,7 @@ type EdgeInterface interface {
 
 // == IMPLEMENTATION ==========================================================
 
-// edgeJSON mirrors flowrunner.Edge's JSON shape (module exchange,
+// edgeJSON mirrors flowrunner.Edge's JSON shape (child flow exchange,
 // Node-RED import, legacy blob fallback)
 type edgeJSON struct {
 	ID        string `json:"id"`

@@ -107,7 +107,7 @@ func (st *Store) loadWorkflowGroups(ctx context.Context, w *workflowImplementati
 // syncWorkflowGroups converges the workflow's node_group entities to
 // the view["groups"] the caller supplied — the P5 write path. A view
 // without a "groups" key is a no-op: non-editor writers (deploy flag
-// flips, module metadata edits) never clobber group state.
+// flips, child flow metadata edits) never clobber group state.
 //
 // Must run AFTER the workflow's child nodes are persisted — membership
 // is stamped as group_id on the node entities.

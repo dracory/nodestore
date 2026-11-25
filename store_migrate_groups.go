@@ -144,7 +144,7 @@ func (st *Store) migrateWorkflowViewGroups(ctx context.Context, wf WorkflowInter
 		name, _ := entry["name"].(string)
 
 		// The data attribute keeps every entry key except id/name/
-		// nodeIds verbatim (x, y, w, h, disabled, module, env) so the
+		// nodeIds verbatim (x, y, w, h, disabled, childFlow, env) so the
 		// wire shape round-trips.
 		data := map[string]any{}
 		for k, v := range entry {
