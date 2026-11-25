@@ -106,6 +106,7 @@ var credentialKeys = struct {
 	"httpRequest": {"username", "password"},
 	"mqttIn":      {"username", "password"},
 	"mqttOut":     {"username", "password"},
+	"mqttBroker":  {"user", "password"},
 	"mailIn":      {"username", "password"},
 	"mailOut":     {"username", "password"},
 	"queue":       {"password"},

@@ -210,9 +210,10 @@ func moduleEntity(w WorkflowInterface, ref string) map[string]any {
 }
 
 // nodeRefKeys are the node Data keys that carry references to other
-// node ids: linkOut "links", catch/status/complete "nodes" lists and
-// linkCall "link".
-var nodeRefKeys = []string{"links", "nodes", "link"}
+// node ids: linkOut "links", catch/status/complete "nodes" lists,
+// linkCall "link", mqtt "broker" (address values that are not node
+// ids pass through unchanged) and tcp/mqtt "tls" (tlsConfig refs).
+var nodeRefKeys = []string{"links", "nodes", "link", "broker", "tls"}
 
 // collectIDRefs extracts the node ids a node's Data references through
 // nodeRefKeys (ids may be a string, a comma-separated string, or an

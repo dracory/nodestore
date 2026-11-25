@@ -346,3 +346,39 @@ func TestNodeREDEnvRoundTrip(t *testing.T) {
 		t.Fatalf("exported tab env mismatch: %v", em)
 	}
 }
+
+// TestNodeREDMQTTBrokerImport verifies a Node-RED mqtt-broker config
+// node lands as the engine's mqttBroker type and that the referencing
+// mqtt node's "broker" field is rewritten to the config node's NEW id
+// (ids are re-minted on import).
+func TestNodeREDMQTTBrokerImport(t *testing.T) {
+	flowJSON := `[
+		{"id":"tab1","type":"tab","label":"Main"},
+		{"id":"brk1","type":"mqtt-broker","broker":"broker.local","port":"8883","usetls":true,"cleansession":false,"keepalive":"30","clientid":"shared"},
+		{"id":"mi1","type":"mqtt in","z":"tab1","broker":"brk1","topic":"a/#","wires":[["mo1"]]},
+		{"id":"mo1","type":"mqtt out","z":"tab1","broker":"brk1","topic":"a/b","wires":[[]]}
+	]`
+
+	w, err := ImportNodeRED([]byte(flowJSON))
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	broker := nodeByType(w, "mqttBroker")
+	if broker == nil {
+		t.Fatal("mqtt-broker config node did not map to mqttBroker")
+	}
+	if stringOf(broker.GetData()["broker"]) != "broker.local" {
+		t.Fatalf("broker address lost: %v", broker.GetData())
+	}
+	in := nodeByType(w, "mqttIn")
+	out := nodeByType(w, "mqttOut")
+	if in == nil || out == nil {
+		t.Fatal("mqtt nodes missing after import")
+	}
+	if stringOf(in.GetData()["broker"]) != broker.GetID() {
+		t.Fatalf("mqttIn broker ref not remapped to config node id: %v", in.GetData()["broker"])
+	}
+	if stringOf(out.GetData()["broker"]) != broker.GetID() {
+		t.Fatalf("mqttOut broker ref not remapped to config node id: %v", out.GetData()["broker"])
+	}
+}

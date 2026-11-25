@@ -61,6 +61,7 @@ var nodeREDTypeToModule = map[string]string{
 	"link call":     "linkCall",
 	"mqtt in":       "mqttIn",
 	"mqtt out":      "mqttOut",
+	"mqtt-broker":   "mqttBroker",
 	"tcp in":        "tcpIn",
 	"tcp out":       "tcpOut",
 	"tcp request":   "tcpRequest",
