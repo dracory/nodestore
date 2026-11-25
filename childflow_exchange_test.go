@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// requireWellFormedDef asserts that a type:"subflow" definition's
+// requireWellFormedDef asserts that a type:"component" definition's
 // internal graph is intact: every internal node parses through
-// parseSubflowInnerNode and every internal edge decodes with endpoints
+// parseComponentInnerNode and every internal edge decodes with endpoints
 // among the internal node ids. It stands in for flowrunner's
 // ExpandSubflows check (nodestore has no engine), proving the imported
 // definition is deployable in shape.
@@ -21,7 +21,7 @@ func requireWellFormedDef(t *testing.T, n NodeInterface) {
 		if !ok {
 			t.Fatalf("definition %q carries a non-map internal node: %v", n.GetID(), rawNode)
 		}
-		inner, err := parseSubflowInnerNode(mustJSON(m))
+		inner, err := parseComponentInnerNode(mustJSON(m))
 		if err != nil {
 			t.Fatalf("definition %q internal node failed to parse: %v", n.GetID(), err)
 		}
@@ -42,10 +42,10 @@ func requireWellFormedDef(t *testing.T, n NodeInterface) {
 	}
 }
 
-// findDef returns the first type:"subflow" definition node of w.
+// findDef returns the first type:"component" definition node of w.
 func findDef(w WorkflowInterface, id string) NodeInterface {
 	for _, n := range w.GetNodes() {
-		if n.GetType() == subflowDefNodeType && (id == "" || n.GetID() == id) {
+		if n.GetType() == componentDefNodeType && (id == "" || n.GetID() == id) {
 			return n
 		}
 	}
@@ -56,10 +56,10 @@ func findDef(w WorkflowInterface, id string) NodeInterface {
 // and imported into workflow B must arrive with every id re-minted,
 // internal references rewritten, and its subflow definitions intact
 // enough that a deploy-time expansion could instantiate them.
-func TestModuleExportImportRoundTrip(t *testing.T) {
+func TestChildFlowExportImportRoundTrip(t *testing.T) {
 	src := NewWorkflow("source").SetID("wf-src")
 	src.SetNodes([]NodeInterface{
-		NewNode("def1", "subflow").SetData(map[string]any{
+		NewNode("def1", "component").SetData(map[string]any{
 			"name": "Pass",
 			"in":   []any{map[string]any{"x": 0.0, "y": 0.0, "wires": []any{map[string]any{"id": "inner1"}}}},
 			"out":  []any{map[string]any{"x": 0.0, "y": 0.0, "wires": []any{map[string]any{"id": "inner1", "port": 0.0}}}},
@@ -71,13 +71,13 @@ func TestModuleExportImportRoundTrip(t *testing.T) {
 			}},
 			"edges": []any{},
 		}),
-		NewNode("n1", "inject").SetData(map[string]any{"name": "go", "module": "mod-a"}),
-		NewNode("n2", "subflow:def1").SetData(map[string]any{"name": "inst", "module": "mod-a"}),
-		NewNode("n3", "debug").SetData(map[string]any{"name": "out", "module": "mod-a"}),
-		NewNode("n4", "linkOut").SetData(map[string]any{"name": "lo", "module": "mod-a", "links": []any{"ext-1"}}),
+		NewNode("n1", "inject").SetData(map[string]any{"name": "go", "childFlow": "mod-a"}),
+		NewNode("n2", "component:def1").SetData(map[string]any{"name": "inst", "childFlow": "mod-a"}),
+		NewNode("n3", "debug").SetData(map[string]any{"name": "out", "childFlow": "mod-a"}),
+		NewNode("n4", "linkOut").SetData(map[string]any{"name": "lo", "childFlow": "mod-a", "links": []any{"ext-1"}}),
 		// Other-module + unmoduled nodes must not export.
-		NewNode("m1", "debug").SetData(map[string]any{"name": "other", "module": "mod-b"}),
-		NewNode("m2", "linkIn").SetData(map[string]any{"name": "li", "module": "mod-b"}),
+		NewNode("m1", "debug").SetData(map[string]any{"name": "other", "childFlow": "mod-b"}),
+		NewNode("m2", "linkIn").SetData(map[string]any{"name": "li", "childFlow": "mod-b"}),
 	})
 	src.SetEdges([]EdgeInterface{
 		NewEdge("e1", "n1", "n2").SetSourceKey("output_1").SetTargetKey("input_1"),
@@ -85,27 +85,27 @@ func TestModuleExportImportRoundTrip(t *testing.T) {
 		NewEdge("e3", "n3", "m1").SetSourceKey("output_1").SetTargetKey("input_1"),
 	})
 	src.SetView(map[string]any{
-		"modules": []any{
+		"childFlows": []any{
 			map[string]any{"id": "mod-a", "label": "Alpha", "role": "flow", "enabled": true},
 			map[string]any{"id": "mod-b", "label": "Beta", "role": "flow", "enabled": true},
 		},
 		"groups": []any{
-			map[string]any{"id": "g1", "module": "mod-a", "name": "grp", "nodeIds": []any{"n1", "n3"}},
+			map[string]any{"id": "g1", "childFlow": "mod-a", "name": "grp", "nodeIds": []any{"n1", "n3"}},
 		},
 	})
 
-	exp, err := ExportModule(src, "mod-a")
+	exp, err := ExportChildFlow(src, "mod-a")
 	if err != nil {
-		t.Fatalf("ExportModule: %v", err)
+		t.Fatalf("ExportChildFlow: %v", err)
 	}
-	if exp.Format != "module" || exp.Version != 1 {
+	if exp.Format != "child_flow" || exp.Version != 1 {
 		t.Fatalf("bad envelope header: %+v", exp)
 	}
 	if got := len(exp.Nodes); got != 4 {
 		t.Fatalf("expected 4 exported nodes, got %d", got)
 	}
 	for _, n := range exp.Nodes {
-		if _, ok := n.GetData()["module"]; ok {
+		if _, ok := n.GetData()["childFlow"]; ok {
 			t.Fatalf("exported node %s still carries data.module", n.GetID())
 		}
 	}
@@ -137,16 +137,16 @@ func TestModuleExportImportRoundTrip(t *testing.T) {
 	// Import into a different workflow.
 	dst := NewWorkflow("dest").SetID("wf-dst")
 	dst.SetNodes([]NodeInterface{
-		NewNode("x1", "debug").SetData(map[string]any{"module": "home"}),
+		NewNode("x1", "debug").SetData(map[string]any{"childFlow": "home"}),
 	})
 	dst.SetView(map[string]any{
-		"modules": []any{
+		"childFlows": []any{
 			map[string]any{"id": "home", "label": "Alpha", "role": "flow", "enabled": true},
 		},
 	})
-	warnings, err := ImportModule(dst, raw)
+	warnings, err := ImportChildFlow(dst, raw)
 	if err != nil {
-		t.Fatalf("ImportModule: %v", err)
+		t.Fatalf("ImportChildFlow: %v", err)
 	}
 	// The external linkOut target must be reported dangling.
 	var sawDangling bool
@@ -162,7 +162,7 @@ func TestModuleExportImportRoundTrip(t *testing.T) {
 	// The module entity must be registered with a fresh id and a
 	// deduped label ("Alpha" is taken in the destination workflow).
 	var entity map[string]any
-	for _, m := range arrayOf(dst.GetView()["modules"]) {
+	for _, m := range arrayOf(dst.GetView()["childFlows"]) {
 		mm := m.(map[string]any)
 		if mm["id"] != "home" {
 			entity = mm
@@ -182,7 +182,7 @@ func TestModuleExportImportRoundTrip(t *testing.T) {
 	// Imported nodes: fresh ids, data.module = new module id.
 	var imported []NodeInterface
 	for _, n := range dst.GetNodes() {
-		if n.GetData()["module"] == newID {
+		if n.GetData()["childFlow"] == newID {
 			imported = append(imported, n)
 		}
 	}
@@ -195,12 +195,12 @@ func TestModuleExportImportRoundTrip(t *testing.T) {
 		if oldIDs[n.GetID()] {
 			t.Fatalf("node id %s was not re-minted", n.GetID())
 		}
-		if n.GetData()["moduleName"] != entity["label"] {
-			t.Fatalf("moduleName %v does not match deduped label %v", n.GetData()["moduleName"], entity["label"])
+		if n.GetData()["childFlowName"] != entity["label"] {
+			t.Fatalf("childFlowName %v does not match deduped label %v", n.GetData()["childFlowName"], entity["label"])
 		}
-		if IsSubflowInstance(n.GetType()) {
+		if IsComponentInstance(n.GetType()) {
 			instID = n.GetID()
-			newDefID := strings.TrimPrefix(n.GetType(), subflowTypePrefix)
+			newDefID := strings.TrimPrefix(n.GetType(), componentTypePrefix)
 			if newDefID == "def1" {
 				t.Fatal("instance type must point at the re-minted definition id")
 			}
@@ -234,8 +234,8 @@ func TestModuleExportImportRoundTrip(t *testing.T) {
 		t.Fatalf("expected 1 imported group, got %d", len(groups))
 	}
 	g := groups[0].(map[string]any)
-	if g["module"] != newID {
-		t.Fatalf("group module not rebound: %v", g["module"])
+	if g["childFlow"] != newID {
+		t.Fatalf("group module not rebound: %v", g["childFlow"])
 	}
 	for _, m := range arrayOf(g["nodeIds"]) {
 		if !importedIDs[stringOf(m)] {
@@ -246,7 +246,7 @@ func TestModuleExportImportRoundTrip(t *testing.T) {
 	// The imported definition must be structurally intact — every
 	// internal node decodable and every internal edge endpoint valid.
 	for _, n := range dst.GetNodes() {
-		if n.GetType() == subflowDefNodeType {
+		if n.GetType() == componentDefNodeType {
 			requireWellFormedDef(t, n)
 		}
 	}
@@ -258,27 +258,27 @@ func TestModuleExportImportRoundTrip(t *testing.T) {
 func TestModuleImportIntoSameWorkflow(t *testing.T) {
 	src := NewWorkflow("source").SetID("wf-src")
 	src.SetNodes([]NodeInterface{
-		NewNode("a1", "linkIn").SetData(map[string]any{"module": "mod-x"}),
-		NewNode("a2", "linkOut").SetData(map[string]any{"module": "mod-x", "links": "a1"}),
-		NewNode("b1", "debug").SetData(map[string]any{"module": "mod-y"}),
+		NewNode("a1", "linkIn").SetData(map[string]any{"childFlow": "mod-x"}),
+		NewNode("a2", "linkOut").SetData(map[string]any{"childFlow": "mod-x", "links": "a1"}),
+		NewNode("b1", "debug").SetData(map[string]any{"childFlow": "mod-y"}),
 	})
 	src.SetView(map[string]any{
-		"modules": []any{
+		"childFlows": []any{
 			map[string]any{"id": "mod-x", "label": "X"},
 			map[string]any{"id": "mod-y", "label": "Y"},
 		},
 	})
-	exp, err := ExportModule(src, "mod-x")
+	exp, err := ExportChildFlow(src, "mod-x")
 	if err != nil {
-		t.Fatalf("ExportModule: %v", err)
+		t.Fatalf("ExportChildFlow: %v", err)
 	}
 	if len(exp.Warnings) != 0 {
 		t.Fatalf("internal linkOut ref should not warn, got %v", exp.Warnings)
 	}
 	raw, _ := json.Marshal(exp)
-	warnings, err := ImportModule(src, raw)
+	warnings, err := ImportChildFlow(src, raw)
 	if err != nil {
-		t.Fatalf("ImportModule: %v", err)
+		t.Fatalf("ImportChildFlow: %v", err)
 	}
 	if len(warnings) != 0 {
 		t.Fatalf("re-import into source must not warn, got %v", warnings)
@@ -308,13 +308,13 @@ func TestModuleImportIntoSameWorkflow(t *testing.T) {
 	}
 }
 
-// A definition-only export (ExportSubflowDef) imports as a working
+// A definition-only export (ExportComponentDef) imports as a working
 // definition: its internal graph stays well-formed and an instance can
 // be created against the re-minted id.
 func TestSubflowDefExportImport(t *testing.T) {
 	src := NewWorkflow("").SetID("wf-src")
 	src.SetNodes([]NodeInterface{
-		NewNode("def9", "subflow").SetData(map[string]any{
+		NewNode("def9", "component").SetData(map[string]any{
 			"name": "Echo",
 			"in":   []any{map[string]any{"wires": []any{map[string]any{"id": "i1"}}}},
 			"out":  []any{map[string]any{"wires": []any{map[string]any{"id": "i1", "port": 0.0}}}},
@@ -326,22 +326,22 @@ func TestSubflowDefExportImport(t *testing.T) {
 			"edges": []any{},
 		}),
 	})
-	exp, err := ExportSubflowDef(src, "def9")
+	exp, err := ExportComponentDef(src, "def9")
 	if err != nil {
-		t.Fatalf("ExportSubflowDef: %v", err)
+		t.Fatalf("ExportComponentDef: %v", err)
 	}
-	if exp.Module["role"] != "subflow" {
-		t.Fatalf("def export role should be subflow, got %v", exp.Module["role"])
+	if exp.ChildFlow["role"] != "component" {
+		t.Fatalf("def export role should be subflow, got %v", exp.ChildFlow["role"])
 	}
 	raw, _ := json.Marshal(exp)
 
 	dst := NewWorkflow("").SetID("wf-dst")
-	if _, err := ImportModule(dst, raw); err != nil {
-		t.Fatalf("ImportModule: %v", err)
+	if _, err := ImportChildFlow(dst, raw); err != nil {
+		t.Fatalf("ImportChildFlow: %v", err)
 	}
 	var newDefID string
 	for _, n := range dst.GetNodes() {
-		if n.GetType() == subflowDefNodeType {
+		if n.GetType() == componentDefNodeType {
 			newDefID = n.GetID()
 			requireWellFormedDef(t, n)
 		}
@@ -350,23 +350,23 @@ func TestSubflowDefExportImport(t *testing.T) {
 		t.Fatalf("expected a re-minted definition, got %q", newDefID)
 	}
 	// An instance of the imported definition references it correctly.
-	dst.AddNode(NewNode("inst1", "subflow:"+newDefID).SetData(map[string]any{}))
-	def := findDef(dst, strings.TrimPrefix(nodeByID(dst, "inst1").GetType(), subflowTypePrefix))
+	dst.AddNode(NewNode("inst1", "component:"+newDefID).SetData(map[string]any{}))
+	def := findDef(dst, strings.TrimPrefix(nodeByID(dst, "inst1").GetType(), componentTypePrefix))
 	if def == nil {
 		t.Fatal("instance references missing definition")
 	}
 }
 
 // Bad payloads are rejected with clear errors.
-func TestImportModuleRejectsBadPayload(t *testing.T) {
+func TestImportChildFlowRejectsBadPayload(t *testing.T) {
 	w := NewWorkflow("")
-	if _, err := ImportModule(w, []byte(`[1,2,3]`)); err == nil {
+	if _, err := ImportChildFlow(w, []byte(`[1,2,3]`)); err == nil {
 		t.Fatal("expected error for non-envelope JSON")
 	}
-	if _, err := ImportModule(w, []byte(`{"nodestore":"module","version":99}`)); err == nil {
+	if _, err := ImportChildFlow(w, []byte(`{"nodestore":"childFlow","version":99}`)); err == nil {
 		t.Fatal("expected error for newer version")
 	}
-	if _, err := ExportModule(w, "nope"); err == nil {
+	if _, err := ExportChildFlow(w, "nope"); err == nil {
 		t.Fatal("expected error for unknown module")
 	}
 }

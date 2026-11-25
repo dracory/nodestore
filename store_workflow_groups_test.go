@@ -34,7 +34,7 @@ func TestWorkflowGroupsEntityCutover(t *testing.T) {
 				"nodeIds": []any{"n1", "n2"},
 			},
 			map[string]any{
-				"id": "g2", "name": "Outputs", "module": "Home",
+				"id": "g2", "name": "Outputs", "childFlow": "Home",
 				"nodeIds": []any{"n3"},
 			},
 		},
@@ -86,7 +86,7 @@ func TestWorkflowGroupsEntityCutover(t *testing.T) {
 	if len(synth[0].nodeIDs) != 2 || synth[0].nodeIDs[0] != "n1" {
 		t.Fatalf("g1 members: %v", synth[0].nodeIDs)
 	}
-	if synth[1].data["module"] != "Home" {
+	if synth[1].data["childFlow"] != "Home" {
 		t.Fatalf("g2 data round-trip: %v", synth[1].data)
 	}
 

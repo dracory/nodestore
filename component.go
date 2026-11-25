@@ -11,19 +11,19 @@ import (
 // import/export converters (ported from flowrunner, adapted to the
 // interface-first domain model).
 
-// subflowTypePrefix marks a workflow node as a subflow instance.
-const subflowTypePrefix = "subflow:"
+// componentTypePrefix marks a workflow node as a component instance.
+const componentTypePrefix = "component:"
 
-// subflowDefNodeType is the node type carrying a subflow definition.
-const subflowDefNodeType = "subflow"
+// componentDefNodeType is the node type carrying a component definition.
+const componentDefNodeType = "component"
 
-// subflowEnvKey is the node Data key carrying the resolved env overlay.
-const subflowEnvKey = "_env"
+// componentEnvKey is the node Data key carrying the resolved env overlay.
+const componentEnvKey = "_env"
 
-// IsSubflowInstance reports whether nodeType names a subflow instance
-// ("subflow:<defId>").
-func IsSubflowInstance(nodeType string) bool {
-	return strings.HasPrefix(nodeType, subflowTypePrefix)
+// IsComponentInstance reports whether nodeType names a component instance
+// ("component:<defId>").
+func IsComponentInstance(nodeType string) bool {
+	return strings.HasPrefix(nodeType, componentTypePrefix)
 }
 
 // outputPortIndex maps an edge SourceKey ("output_1", "", "output_N")

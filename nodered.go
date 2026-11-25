@@ -39,20 +39,20 @@ type nodeREDTabMap map[string]string
 
 // nodeREDTabID returns a deterministic tab id for a module name so
 // repeated exports of the same workflow produce stable, diffable ids.
-func nodeREDTabID(module string) string {
+func nodeREDTabID(flow string) string {
 	h := fnv.New32a()
-	_, _ = h.Write([]byte(module))
+	_, _ = h.Write([]byte(flow))
 	return fmt.Sprintf("tab%08x", h.Sum32())
 }
 
-// nodeREDTypeToModule maps Node-RED core type names that differ from
+// nodeREDTypeToInternal maps Node-RED core type names that differ from
 // the engine's ids to their engine equivalents. Node-RED types already
 // spelled the engine's way (inject, debug, function, switch, change,
 // delay, template, join, split, batch, sort, range, rbe, trigger,
 // exec, catch, status, complete, junction, json, xml, csv, yaml,
 // file) need no entry — they import verbatim. Types with no engine
 // equivalent stay untouched and land as unknown nodes.
-var nodeREDTypeToModule = map[string]string{
+var nodeREDTypeToInternal = map[string]string{
 	"http in":            "httpTrigger",
 	"http response":      "httpResponse",
 	"http request":       "httpRequest",
@@ -75,11 +75,11 @@ var nodeREDTypeToModule = map[string]string{
 	"file in":            "fileIn",
 }
 
-// moduleTypeToNodeRED is the inverse of nodeREDTypeToModule, used on
+// internalTypeToNodeRED is the inverse of nodeREDTypeToInternal, used on
 // export so engine nodes emit the Node-RED spellings.
-var moduleTypeToNodeRED = func() map[string]string {
-	m := make(map[string]string, len(nodeREDTypeToModule))
-	for nr, mod := range nodeREDTypeToModule {
+var internalTypeToNodeRED = func() map[string]string {
+	m := make(map[string]string, len(nodeREDTypeToInternal))
+	for nr, mod := range nodeREDTypeToInternal {
 		m[mod] = nr
 	}
 	return m
@@ -88,7 +88,7 @@ var moduleTypeToNodeRED = func() map[string]string {
 // importType maps a Node-RED type name to the engine executor type;
 // unmapped names pass through verbatim (unknown-node handling).
 func importType(nrType string) string {
-	if mod, ok := nodeREDTypeToModule[nrType]; ok {
+	if mod, ok := nodeREDTypeToInternal[nrType]; ok {
 		return mod
 	}
 	return nrType
@@ -97,7 +97,7 @@ func importType(nrType string) string {
 // exportType maps an engine executor type back to the Node-RED spelling;
 // unmapped names pass through verbatim.
 func exportType(modType string) string {
-	if nr, ok := moduleTypeToNodeRED[modType]; ok {
+	if nr, ok := internalTypeToNodeRED[modType]; ok {
 		return nr
 	}
 	return modType
@@ -210,7 +210,7 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 		}
 		data["nodes"] = innerNodes
 		data["edges"] = innerEdges
-		nodes = append(nodes, NewNode(defID, "subflow").SetData(data))
+		nodes = append(nodes, NewNode(defID, componentDefNodeType).SetData(data))
 		defIDs[defID] = true
 	}
 
@@ -264,13 +264,13 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 	// them to ids on the next save, and the engine resolves either
 	// form through view.modules.
 	if len(tabDisabled) > 0 {
-		var disabledModules []any
+		var disabledFlows []any
 		for _, obj := range items {
 			if stringOf(obj["type"]) == "tab" && tabDisabled[stringOf(obj["id"])] {
-				disabledModules = append(disabledModules, tabs[stringOf(obj["id"])])
+				disabledFlows = append(disabledFlows, tabs[stringOf(obj["id"])])
 			}
 		}
-		w.GetView()["disabledModules"] = disabledModules
+		w.GetView()["disabledFlows"] = disabledFlows
 	}
 
 	// Node-RED group objects become view.groups entries — the same
@@ -295,7 +295,7 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 				"nodeIds": nodeIds,
 			}
 			if mod := tabs[stringOf(g["z"])]; mod != "" {
-				entry["module"] = mod
+				entry["childFlow"] = mod
 			}
 			if truthyFlag(g["disabled"]) {
 				entry["disabled"] = true
@@ -324,7 +324,7 @@ func remapImportedWorkflowIDs(w WorkflowInterface) {
 	nodeIDs := map[string]string{}
 	defIDs := map[string]string{}
 	for _, n := range w.GetNodes() {
-		if n.GetType() == subflowDefNodeType {
+		if n.GetType() == componentDefNodeType {
 			defIDs[n.GetID()] = generateID()
 		} else {
 			nodeIDs[n.GetID()] = generateID()
@@ -332,7 +332,7 @@ func remapImportedWorkflowIDs(w WorkflowInterface) {
 	}
 
 	for _, n := range w.GetNodes() {
-		if n.GetType() == subflowDefNodeType {
+		if n.GetType() == componentDefNodeType {
 			innerIDs := map[string]string{}
 			for _, rawNode := range arrayOf(n.GetData()["nodes"]) {
 				if m, ok := rawNode.(map[string]any); ok {
@@ -351,10 +351,10 @@ func remapImportedWorkflowIDs(w WorkflowInterface) {
 				data[key] = remapIDRefs(rv, nodeIDs)
 			}
 		}
-		if IsSubflowInstance(n.GetType()) {
-			old := strings.TrimPrefix(n.GetType(), subflowTypePrefix)
+		if IsComponentInstance(n.GetType()) {
+			old := strings.TrimPrefix(n.GetType(), componentTypePrefix)
 			if mapped, ok := defIDs[old]; ok {
-				n.SetType(subflowTypePrefix + mapped)
+				n.SetType(componentTypePrefix + mapped)
 			}
 		}
 		n.SetID(nodeIDs[n.GetID()])
@@ -387,7 +387,7 @@ func remapImportedWorkflowIDs(w WorkflowInterface) {
 
 // nodeREDToNode converts one flat Node-RED node object into a backend
 // node plus its outgoing edges. module is the owning tab label.
-func nodeREDToNode(obj map[string]any, module string) (NodeInterface, []EdgeInterface) {
+func nodeREDToNode(obj map[string]any, flow string) (NodeInterface, []EdgeInterface) {
 	id := stringOf(obj["id"])
 	node := NewNode(id, importType(stringOf(obj["type"]))).
 		SetPosition(floatOf(obj["x"]), floatOf(obj["y"]))
@@ -402,8 +402,8 @@ func nodeREDToNode(obj map[string]any, module string) (NodeInterface, []EdgeInte
 	if node.GetType() == "linkCall" {
 		importLinkCallData(data)
 	}
-	if module != "" {
-		data["module"] = module
+	if flow != "" {
+		data["childFlow"] = flow
 	}
 
 	var edges []EdgeInterface
@@ -475,21 +475,21 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 	// name in legacy documents) — resolve to the display label, which
 	// is what Node-RED tabs carry.
 	tabs := nodeREDTabMap{}
-	var moduleOrder []string
+	var flowOrder []string
 	for _, n := range w.GetNodes() {
-		if n.GetType() == subflowDefNodeType {
+		if n.GetType() == componentDefNodeType {
 			continue
 		}
-		mod := moduleLabel(w, stringOf(n.GetData()["module"]))
+		mod := flowLabel(w, stringOf(n.GetData()["childFlow"]))
 		if mod == "" {
 			mod = "Main"
 		}
 		if _, ok := tabs[mod]; !ok {
 			tabs[mod] = nodeREDTabID(mod)
-			moduleOrder = append(moduleOrder, mod)
+			flowOrder = append(flowOrder, mod)
 		}
 	}
-	sort.Strings(moduleOrder)
+	sort.Strings(flowOrder)
 	// Node-RED stores flow env on the tab object and exports it —
 	// mirror that by stamping the workflow env (view.env) onto every
 	// emitted tab (all tabs fold back into one workflow on import).
@@ -502,11 +502,11 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 	}
 	disabledMods := map[string]bool{}
 	if view != nil {
-		for _, m := range arrayOf(view["disabledModules"]) {
-			disabledMods[moduleLabel(w, stringOf(m))] = true
+		for _, m := range arrayOf(view["disabledFlows"]) {
+			disabledMods[flowLabel(w, stringOf(m))] = true
 		}
 		// Module entities flagged enabled:false count as disabled too.
-		for _, m := range arrayOf(view["modules"]) {
+		for _, m := range arrayOf(view["childFlows"]) {
 			if mm, ok := m.(map[string]any); ok {
 				if en, isBool := mm["enabled"].(bool); isBool && !en {
 					disabledMods[stringOf(mm["label"])] = true
@@ -514,7 +514,7 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 			}
 		}
 	}
-	for _, mod := range moduleOrder {
+	for _, mod := range flowOrder {
 		tab := map[string]any{
 			"id":    tabs[mod],
 			"type":  "tab",
@@ -538,7 +538,7 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 			if !ok {
 				continue
 			}
-			mod := moduleLabel(w, stringOf(gm["module"]))
+			mod := flowLabel(w, stringOf(gm["childFlow"]))
 			if mod == "" {
 				mod = "Main"
 			}
@@ -590,7 +590,7 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 		for k, v := range n.GetData() {
 			// Credential fields never leave the server (Node-RED strips
 			// them from exported flows); sentinel markers go too.
-			if k == "module" || k == "moduleName" || k == subflowEnvKey ||
+			if k == "childFlow" || k == "childFlowName" || k == componentEnvKey ||
 				IsCredentialKey(n.GetType(), k) || IsCredentialSentinel(v) {
 				continue
 			}
@@ -609,7 +609,7 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 	}
 
 	for _, n := range w.GetNodes() {
-		if n.GetType() == subflowDefNodeType {
+		if n.GetType() == componentDefNodeType {
 			def := map[string]any{
 				"id":   n.GetID(),
 				"type": "subflow",
@@ -638,13 +638,13 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 				if !ok {
 					continue
 				}
-				inner, err := parseSubflowInnerNode(mustJSON(m))
+				inner, err := parseComponentInnerNode(mustJSON(m))
 				if err != nil {
 					continue
 				}
 				obj := map[string]any{}
 				for k, v := range inner.GetData() {
-					if k == subflowEnvKey ||
+					if k == componentEnvKey ||
 						IsCredentialKey(inner.GetType(), k) || IsCredentialSentinel(v) {
 						continue
 					}
@@ -664,7 +664,7 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 			continue
 		}
 
-		mod := moduleLabel(w, stringOf(n.GetData()["module"]))
+		mod := flowLabel(w, stringOf(n.GetData()["childFlow"]))
 		if mod == "" {
 			mod = "Main"
 		}
@@ -677,10 +677,10 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 	return json.Marshal(items)
 }
 
-// parseSubflowInnerNode decodes one internal node of a definition,
+// parseComponentInnerNode decodes one internal node of a definition,
 // accepting both the backend ({position, data}) and the Node-RED flat
 // ({x, y, ...config}) shapes.
-func parseSubflowInnerNode(raw json.RawMessage) (NodeInterface, error) {
+func parseComponentInnerNode(raw json.RawMessage) (NodeInterface, error) {
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, err

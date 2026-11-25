@@ -7,55 +7,55 @@ import (
 	"strings"
 )
 
-// This file implements module-level export/import: one module (flow or
-// role:"subflow" template) moves between workflows as a portable
+// This file implements child flow-level export/import: one child flow (flow or
+// role:"component" template) moves between workflows as a portable
 // envelope. Format decisions:
 //
-//   - Payload: a versioned module envelope, not a Node-RED
+//   - Payload: a versioned child flow envelope, not a Node-RED
 //     array. The envelope keeps everything a Node-RED tab would lose:
-//     edge ids, view.groups, module meta (role/enabled/env) and the
-//     subflow definitions the module's instances need. Node-RED
-//     interop for single modules stays available through the
-//     whole-workflow export (one tab per module); pasting a Node-RED
+//     edge ids, view.groups, child flow meta (role/enabled/env) and the
+//     component definitions the child flow's instances need. Node-RED
+//     interop for single child flows stays available through the
+//     whole-workflow export (one tab per child flow); pasting a Node-RED
 //     array still creates a new workflow via ImportNodeRED.
-//   - Cross-module references: nodes keep their link/linkCall/catch
+//   - Cross-child flow references: nodes keep their link/linkCall/catch
 //     references verbatim (an import back into the source workflow
 //     still resolves them) and every unresolved reference is recorded
 //     in Warnings — keep + warn, the Node-RED "copy as JSON" policy
-//     made explicit instead of silent. Subflow definitions are the
+//     made explicit instead of silent. Component definitions are the
 //     exception: they are exported transitively (defs[]), because an
 //     instance without its definition cannot deploy at all.
-//   - Import semantics: the payload always lands as a NEW module —
-//     every id (module, nodes, edges, groups, defs and their internal
+//   - Import semantics: the payload always lands as a NEW child flow —
+//     every id (child flow, nodes, edges, groups, defs and their internal
 //     nodes/edges) is re-minted and every intra-payload reference is
 //     rewritten, so re-importing produces a second copy rather than
 //     clobbering the original. Label collisions get an " (imported)"
 //     suffix, then a numeric one.
 
-// moduleExportFormat is the "nodestore" field's marker value.
-const moduleExportFormat = "module"
+// childFlowExportFormat is the "nodestore" field's marker value.
+const childFlowExportFormat = "child_flow"
 
-// moduleExportVersion is the current envelope version. Importers
+// childFlowExportVersion is the current envelope version. Importers
 // accept any version <= this so the format can evolve.
-const moduleExportVersion = 1
+const childFlowExportVersion = 1
 
-// ModuleExport is the portable single-module payload.
-type ModuleExport struct {
-	// Format identifies the envelope kind; always "module".
+// ChildFlowExport is the portable single-child flow payload.
+type ChildFlowExport struct {
+	// Format identifies the envelope kind; always "child_flow".
 	Format string `json:"nodestore"`
 	// Version is the envelope schema version.
 	Version int `json:"version"`
-	// Module carries the meta entity {id,label,role,enabled,env}.
-	Module map[string]any `json:"module"`
-	// Nodes are the module's nodes (backend shape; data.module is
+	// ChildFlow carries the meta entity {id,label,role,enabled,env}.
+	ChildFlow map[string]any `json:"child_flow"`
+	// Nodes are the child flow's nodes (backend shape; data.child flow is
 	// implied by the envelope and omitted).
 	Nodes []NodeInterface `json:"nodes"`
-	// Edges are the edges whose endpoints both live in the module.
+	// Edges are the edges whose endpoints both live in the child flow.
 	Edges []EdgeInterface `json:"edges"`
-	// Groups are the view.groups entries belonging to the module.
+	// Groups are the view.groups entries belonging to the child flow.
 	Groups []any `json:"groups,omitempty"`
-	// Defs are the type:"subflow" definition nodes the module's
-	// subflow:<id> instances reference, resolved transitively
+	// Defs are the type:"component" definition nodes the child flow's
+	// component:<id> instances reference, resolved transitively
 	// (a definition may itself instantiate another definition).
 	Defs []NodeInterface `json:"defs,omitempty"`
 	// Warnings lists references that point outside the payload —
@@ -64,31 +64,31 @@ type ModuleExport struct {
 	Warnings []string `json:"warnings,omitempty"`
 }
 
-// moduleExportJSON is the wire form of ModuleExport — identical field
+// childFlowExportJSON is the wire form of ChildFlowExport — identical field
 // layout, but with the concrete nodeJSON/edgeJSON shapes so the
 // interface-typed slices marshal and unmarshal faithfully.
-type moduleExportJSON struct {
-	Format   string         `json:"nodestore"`
-	Version  int            `json:"version"`
-	Module   map[string]any `json:"module"`
-	Nodes    []nodeJSON     `json:"nodes"`
-	Edges    []edgeJSON     `json:"edges"`
-	Groups   []any          `json:"groups,omitempty"`
-	Defs     []nodeJSON     `json:"defs,omitempty"`
-	Warnings []string       `json:"warnings,omitempty"`
+type childFlowExportJSON struct {
+	Format    string         `json:"nodestore"`
+	Version   int            `json:"version"`
+	ChildFlow map[string]any `json:"child_flow"`
+	Nodes     []nodeJSON     `json:"nodes"`
+	Edges     []edgeJSON     `json:"edges"`
+	Groups    []any          `json:"groups,omitempty"`
+	Defs      []nodeJSON     `json:"defs,omitempty"`
+	Warnings  []string       `json:"warnings,omitempty"`
 }
 
 // MarshalJSON serializes the interface-typed node/edge slices through
 // their persisted JSON shapes.
-func (e ModuleExport) MarshalJSON() ([]byte, error) {
-	wire := moduleExportJSON{
-		Format:   e.Format,
-		Version:  e.Version,
-		Module:   e.Module,
-		Nodes:    []nodeJSON{},
-		Edges:    []edgeJSON{},
-		Groups:   e.Groups,
-		Warnings: e.Warnings,
+func (e ChildFlowExport) MarshalJSON() ([]byte, error) {
+	wire := childFlowExportJSON{
+		Format:    e.Format,
+		Version:   e.Version,
+		ChildFlow: e.ChildFlow,
+		Nodes:     []nodeJSON{},
+		Edges:     []edgeJSON{},
+		Groups:    e.Groups,
+		Warnings:  e.Warnings,
 	}
 	for _, n := range e.Nodes {
 		wire.Nodes = append(wire.Nodes, nodeJSON{
@@ -120,14 +120,14 @@ func (e ModuleExport) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON decodes the wire form back into interface-typed
 // domain objects.
-func (e *ModuleExport) UnmarshalJSON(raw []byte) error {
-	var wire moduleExportJSON
+func (e *ChildFlowExport) UnmarshalJSON(raw []byte) error {
+	var wire childFlowExportJSON
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		return err
 	}
 	e.Format = wire.Format
 	e.Version = wire.Version
-	e.Module = wire.Module
+	e.ChildFlow = wire.ChildFlow
 	e.Groups = wire.Groups
 	e.Warnings = wire.Warnings
 	e.Nodes = []NodeInterface{}
@@ -145,26 +145,26 @@ func (e *ModuleExport) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// Module identity helpers.
+// Child flow identity helpers.
 //
-// Under the id-keyed model a node's Data["module"] holds the stable
-// module id and the module entities are persisted as
-// workflow view["modules"] entries of shape {id, label, role,
+// Under the id-keyed model a node's Data["childFlow"] holds the stable
+// child flow id and the child flow entities are persisted as
+// workflow view["childFlows"] entries of shape {id, label, role,
 // enabled, env}. Documents written before the migration carry the
-// module name in Data["module"] instead — and in
-// view.disabledModules / view.groups[].module — so every consumer
+// child flow name in Data["childFlow"] instead — and in
+// view.disabledModules / view.groups[].child flow — so every consumer
 // resolves references through the entity list, accepting either form.
 
-// moduleLabel resolves a module reference — a module id or a legacy
-// module name — to the module's display label via view["modules"].
+// flowLabel resolves a child flow reference — a child flow id or a legacy
+// child flow name — to the child flow's display label via view["childFlows"].
 // Unresolvable references return unchanged, which keeps legacy
-// name-valued documents working: their data.module already is the
+// name-valued documents working: their data.child flow already is the
 // label.
-func moduleLabel(w WorkflowInterface, ref string) string {
+func flowLabel(w WorkflowInterface, ref string) string {
 	if w == nil || w.GetView() == nil || ref == "" {
 		return ref
 	}
-	for _, m := range arrayOf(w.GetView()["modules"]) {
+	for _, m := range arrayOf(w.GetView()["childFlows"]) {
 		mm, ok := m.(map[string]any)
 		if !ok {
 			continue
@@ -178,26 +178,26 @@ func moduleLabel(w WorkflowInterface, ref string) string {
 	return ref
 }
 
-// moduleRefMatches reports whether two stored module references point
-// at the same module. Each reference may be a module id or a name;
-// both are resolved to labels through view.modules so mixed old/new
+// flowRefMatches reports whether two stored child flow references point
+// at the same child flow. Each reference may be a child flow id or a name;
+// both are resolved to labels through view.child flows so mixed old/new
 // documents (id on the node, name on the flag, or vice versa) still
 // match.
-func moduleRefMatches(w WorkflowInterface, a, b any) bool {
+func flowRefMatches(w WorkflowInterface, a, b any) bool {
 	ra, rb := stringOf(a), stringOf(b)
 	if ra == "" || rb == "" {
 		return false
 	}
-	return ra == rb || moduleLabel(w, ra) == moduleLabel(w, rb)
+	return ra == rb || flowLabel(w, ra) == flowLabel(w, rb)
 }
 
-// moduleEntity finds the view.modules entity matching ref by id or
+// flowEntity finds the view.child flows entity matching ref by id or
 // label; returns nil when the workflow carries no such entity.
-func moduleEntity(w WorkflowInterface, ref string) map[string]any {
+func flowEntity(w WorkflowInterface, ref string) map[string]any {
 	if w == nil || w.GetView() == nil || ref == "" {
 		return nil
 	}
-	for _, m := range arrayOf(w.GetView()["modules"]) {
+	for _, m := range arrayOf(w.GetView()["childFlows"]) {
 		mm, ok := m.(map[string]any)
 		if !ok {
 			continue
@@ -248,12 +248,12 @@ func collectIDRefs(data map[string]any) []string {
 }
 
 // scrubNodeData returns a deep copy of a node's Data safe for export:
-// module bookkeeping and credential material are removed (same policy
+// child flow bookkeeping and credential material are removed (same policy
 // as ExportNodeRED — secrets never leave the server in exports).
 func scrubNodeData(nodeType string, data map[string]any) map[string]any {
 	out := map[string]any{}
 	for k, v := range data {
-		if k == "module" || k == "moduleName" || k == subflowEnvKey ||
+		if k == "childFlow" || k == "childFlowName" || k == componentEnvKey ||
 			IsCredentialKey(nodeType, k) || IsCredentialSentinel(v) {
 			continue
 		}
@@ -262,7 +262,7 @@ func scrubNodeData(nodeType string, data map[string]any) map[string]any {
 	return out
 }
 
-// scrubDefData deep-copies a type:"subflow" definition's Data and
+// scrubDefData deep-copies a type:"component" definition's Data and
 // scrubs credential material inside its internal nodes.
 func scrubDefData(data map[string]any) map[string]any {
 	raw, _ := json.Marshal(data)
@@ -284,23 +284,23 @@ func scrubDefData(data map[string]any) map[string]any {
 	return out
 }
 
-// collectDefIDs returns the closure of subflow definition ids the
-// given nodes reference through "subflow:<defID>" types — including
+// collectDefIDs returns the closure of component definition ids the
+// given nodes reference through "component:<defID>" types — including
 // definitions instantiated inside other definitions' internal graphs.
 func collectDefIDs(w WorkflowInterface, nodes []NodeInterface) map[string]bool {
 	defIndex := map[string]bool{}
 	for _, n := range w.GetNodes() {
-		if n.GetType() == subflowDefNodeType {
+		if n.GetType() == componentDefNodeType {
 			defIndex[n.GetID()] = true
 		}
 	}
 	wanted := map[string]bool{}
 	var queue []string
 	note := func(nodeType string) {
-		if !IsSubflowInstance(nodeType) {
+		if !IsComponentInstance(nodeType) {
 			return
 		}
-		id := strings.TrimPrefix(nodeType, subflowTypePrefix)
+		id := strings.TrimPrefix(nodeType, componentTypePrefix)
 		if id != "" && !wanted[id] {
 			wanted[id] = true
 			queue = append(queue, id)
@@ -316,7 +316,7 @@ func collectDefIDs(w WorkflowInterface, nodes []NodeInterface) map[string]bool {
 			continue // instance references a missing definition
 		}
 		for _, n := range w.GetNodes() {
-			if n.GetType() == subflowDefNodeType && n.GetID() == id {
+			if n.GetType() == componentDefNodeType && n.GetID() == id {
 				for _, rawInner := range arrayOf(n.GetData()["nodes"]) {
 					if m, ok := rawInner.(map[string]any); ok {
 						note(stringOf(m["type"]))
@@ -328,38 +328,38 @@ func collectDefIDs(w WorkflowInterface, nodes []NodeInterface) map[string]bool {
 	return wanted
 }
 
-// ExportModule builds the portable envelope for one module of w.
-// moduleRef is a module id or label. Nodes are the workflow nodes
-// whose data.module resolves to the module; edges are those fully
-// inside the set; groups and subflow definitions follow. References
-// pointing at nodes outside the module are kept verbatim and listed
+// ExportChildFlow builds the portable envelope for one child flow of w.
+// flowRef is a child flow id or label. Nodes are the workflow nodes
+// whose data.child flow resolves to the child flow; edges are those fully
+// inside the set; groups and component definitions follow. References
+// pointing at nodes outside the child flow are kept verbatim and listed
 // in Warnings.
-func ExportModule(w WorkflowInterface, moduleRef string) (*ModuleExport, error) {
+func ExportChildFlow(w WorkflowInterface, flowRef string) (*ChildFlowExport, error) {
 	if w == nil {
 		return nil, fmt.Errorf("workflow is nil")
 	}
-	if moduleRef == "" {
-		return nil, fmt.Errorf("module is required")
+	if flowRef == "" {
+		return nil, fmt.Errorf("child flow is required")
 	}
 
 	var nodes []NodeInterface
-	inModule := map[string]bool{}
+	inFlow := map[string]bool{}
 	for _, n := range w.GetNodes() {
-		if n.GetType() == subflowDefNodeType {
+		if n.GetType() == componentDefNodeType {
 			continue
 		}
-		if moduleRefMatches(w, n.GetData()["module"], moduleRef) {
+		if flowRefMatches(w, n.GetData()["childFlow"], flowRef) {
 			nodes = append(nodes, n)
-			inModule[n.GetID()] = true
+			inFlow[n.GetID()] = true
 		}
 	}
-	entity := moduleEntity(w, moduleRef)
+	entity := flowEntity(w, flowRef)
 	if len(nodes) == 0 && entity == nil {
-		return nil, fmt.Errorf("module %q not found", moduleRef)
+		return nil, fmt.Errorf("child flow %q not found", flowRef)
 	}
 
-	// Module meta: prefer the persisted entity, else synthesize from
-	// the resolved label so a legacy name-keyed module still exports.
+	// Child flow meta: prefer the persisted entity, else synthesize from
+	// the resolved label so a legacy name-keyed child flow still exports.
 	meta := map[string]any{}
 	if entity != nil {
 		for k, v := range entity {
@@ -367,34 +367,34 @@ func ExportModule(w WorkflowInterface, moduleRef string) (*ModuleExport, error) 
 		}
 	}
 	if stringOf(meta["id"]) == "" {
-		meta["id"] = moduleRef
+		meta["id"] = flowRef
 	}
 	label := stringOf(meta["label"])
 	if label == "" {
-		label = moduleLabel(w, moduleRef)
+		label = flowLabel(w, flowRef)
 	}
 	meta["label"] = label
 	if stringOf(meta["role"]) == "" {
 		meta["role"] = "flow"
 	}
 	if _, has := meta["enabled"]; !has {
-		// view.disabledModules covers modules whose entity lacks the
+		// view.disabledModules covers child flows whose entity lacks the
 		// enabled flag (legacy documents).
 		disabled := false
-		for _, m := range arrayOf(w.GetView()["disabledModules"]) {
-			if moduleRefMatches(w, m, moduleRef) {
+		for _, m := range arrayOf(w.GetView()["disabledFlows"]) {
+			if flowRefMatches(w, m, flowRef) {
 				disabled = true
 			}
 		}
 		meta["enabled"] = !disabled
 	}
 
-	out := &ModuleExport{
-		Format:  moduleExportFormat,
-		Version: moduleExportVersion,
-		Module:  meta,
-		Nodes:   []NodeInterface{},
-		Edges:   []EdgeInterface{},
+	out := &ChildFlowExport{
+		Format:    childFlowExportFormat,
+		Version:   childFlowExportVersion,
+		ChildFlow: meta,
+		Nodes:     []NodeInterface{},
+		Edges:     []EdgeInterface{},
 	}
 
 	for _, n := range nodes {
@@ -403,33 +403,33 @@ func ExportModule(w WorkflowInterface, moduleRef string) (*ModuleExport, error) 
 			SetData(scrubNodeData(n.GetType(), n.GetData())))
 	}
 
-	// Edges: keep only intra-module wires; a wire crossing the module
+	// Edges: keep only intra-child flow wires; a wire crossing the child flow
 	// boundary is dropped and reported (Node-RED precedent — selected
 	// export silently drops out-of-selection wires — but we say so).
 	for _, e := range w.GetEdges() {
 		switch {
-		case inModule[e.GetSource()] && inModule[e.GetTarget()]:
+		case inFlow[e.GetSource()] && inFlow[e.GetTarget()]:
 			out.Edges = append(out.Edges, e)
-		case inModule[e.GetSource()] || inModule[e.GetTarget()]:
+		case inFlow[e.GetSource()] || inFlow[e.GetTarget()]:
 			out.Warnings = append(out.Warnings, fmt.Sprintf(
-				"edge %q (%s -> %s) crosses the module boundary and was dropped",
+				"edge %q (%s -> %s) crosses the child flow boundary and was dropped",
 				e.GetID(), e.GetSource(), e.GetTarget()))
 		}
 	}
 
-	// Groups owned by the module (module field stripped — the envelope
+	// Groups owned by the child flow (child flow field stripped — the envelope
 	// implies it).
 	for _, g := range arrayOf(w.GetView()["groups"]) {
 		gm, ok := g.(map[string]any)
 		if !ok {
 			continue
 		}
-		if !moduleRefMatches(w, gm["module"], moduleRef) {
+		if !flowRefMatches(w, gm["childFlow"], flowRef) {
 			continue
 		}
 		entry := map[string]any{}
 		for k, v := range gm {
-			if k == "module" {
+			if k == "childFlow" {
 				continue
 			}
 			entry[k] = v
@@ -437,62 +437,62 @@ func ExportModule(w WorkflowInterface, moduleRef string) (*ModuleExport, error) 
 		out.Groups = append(out.Groups, entry)
 	}
 
-	// Subflow definitions the module's instances need, transitively.
+	// Component definitions the child flow's instances need, transitively.
 	wanted := collectDefIDs(w, nodes)
 	for _, n := range w.GetNodes() {
-		if n.GetType() == subflowDefNodeType && wanted[n.GetID()] {
-			out.Defs = append(out.Defs, NewNode(n.GetID(), subflowDefNodeType).
+		if n.GetType() == componentDefNodeType && wanted[n.GetID()] {
+			out.Defs = append(out.Defs, NewNode(n.GetID(), componentDefNodeType).
 				SetPosition(n.GetPositionX(), n.GetPositionY()).
 				SetData(scrubDefData(n.GetData())))
 		}
 	}
 
-	out.Warnings = append(out.Warnings, externalRefWarnings(out.Nodes, inModule)...)
+	out.Warnings = append(out.Warnings, externalRefWarnings(out.Nodes, inFlow)...)
 	return out, nil
 }
 
-// ExportSubflowDef builds a module envelope carrying a single subflow
-// definition (plus any definitions it nests). The envelope's module
-// entity is a role:"subflow" template named after the definition, so
-// importing it produces a navigable module plus a working definition.
-func ExportSubflowDef(w WorkflowInterface, defID string) (*ModuleExport, error) {
+// ExportComponentDef builds a child flow envelope carrying a single component
+// definition (plus any definitions it nests). The envelope's child flow
+// entity is a role:"component" template named after the definition, so
+// importing it produces a navigable child flow plus a working definition.
+func ExportComponentDef(w WorkflowInterface, defID string) (*ChildFlowExport, error) {
 	if defID == "" {
-		return nil, fmt.Errorf("subflow definition id is required")
+		return nil, fmt.Errorf("component definition id is required")
 	}
 	var def NodeInterface
 	for _, n := range w.GetNodes() {
-		if n.GetType() == subflowDefNodeType && n.GetID() == defID {
+		if n.GetType() == componentDefNodeType && n.GetID() == defID {
 			def = n
 			break
 		}
 	}
 	if def == nil {
-		return nil, fmt.Errorf("subflow definition %q not found", defID)
+		return nil, fmt.Errorf("component definition %q not found", defID)
 	}
 
-	out := &ModuleExport{
-		Format:  moduleExportFormat,
-		Version: moduleExportVersion,
-		Module: map[string]any{
+	out := &ChildFlowExport{
+		Format:  childFlowExportFormat,
+		Version: childFlowExportVersion,
+		ChildFlow: map[string]any{
 			"id":      def.GetID(),
 			"label":   stringOf(def.GetData()["name"]),
-			"role":    "subflow",
+			"role":    "component",
 			"enabled": true,
 		},
 		Nodes: []NodeInterface{},
 		Edges: []EdgeInterface{},
 	}
-	if out.Module["label"] == "" {
-		out.Module["label"] = "Subflow"
+	if out.ChildFlow["label"] == "" {
+		out.ChildFlow["label"] = "Component"
 	}
 
 	// The definition plus the transitive closure of definitions its
 	// internal nodes instantiate.
-	seed := NewNode(def.GetID(), subflowTypePrefix+def.GetID())
+	seed := NewNode(def.GetID(), componentTypePrefix+def.GetID())
 	wanted := collectDefIDs(w, []NodeInterface{seed})
 	for _, n := range w.GetNodes() {
-		if n.GetType() == subflowDefNodeType && wanted[n.GetID()] {
-			out.Defs = append(out.Defs, NewNode(n.GetID(), subflowDefNodeType).
+		if n.GetType() == componentDefNodeType && wanted[n.GetID()] {
+			out.Defs = append(out.Defs, NewNode(n.GetID(), componentDefNodeType).
 				SetPosition(n.GetPositionX(), n.GetPositionY()).
 				SetData(scrubDefData(n.GetData())))
 		}
@@ -502,11 +502,11 @@ func ExportSubflowDef(w WorkflowInterface, defID string) (*ModuleExport, error) 
 
 // externalRefWarnings lists node Data references pointing outside the
 // exported node set.
-func externalRefWarnings(nodes []NodeInterface, inModule map[string]bool) []string {
+func externalRefWarnings(nodes []NodeInterface, inFlow map[string]bool) []string {
 	var warnings []string
 	for _, n := range nodes {
 		for _, ref := range collectIDRefs(n.GetData()) {
-			if !inModule[ref] {
+			if !inFlow[ref] {
 				warnings = append(warnings, fmt.Sprintf(
 					"node %q (%s) references external node %q — the reference is kept but will dangle unless the target workflow contains it",
 					n.GetID(), n.GetType(), ref))
@@ -516,11 +516,11 @@ func externalRefWarnings(nodes []NodeInterface, inModule map[string]bool) []stri
 	return warnings
 }
 
-// dedupeModuleLabel returns label, or a suffixed variant when a module
+// dedupeFlowLabel returns label, or a suffixed variant when a child flow
 // entity already carries that label.
-func dedupeModuleLabel(w WorkflowInterface, label string) string {
+func dedupeFlowLabel(w WorkflowInterface, label string) string {
 	taken := map[string]bool{}
-	for _, m := range arrayOf(w.GetView()["modules"]) {
+	for _, m := range arrayOf(w.GetView()["childFlows"]) {
 		if mm, ok := m.(map[string]any); ok {
 			taken[stringOf(mm["label"])] = true
 		}
@@ -576,7 +576,7 @@ func remapIDRefs(v any, idMap map[string]string) any {
 // rewriteDefData remaps a definition's internal graph: every internal
 // node gets a new id (innerIDs), internal edges and in/out port wires
 // follow, inner node-id refs are rewritten, and nested
-// "subflow:<defID>" instances follow the definition id map.
+// "component:<defID>" instances follow the definition id map.
 func rewriteDefData(data map[string]any, innerIDs, defIDs map[string]string) map[string]any {
 	out := map[string]any{}
 	for k, v := range data {
@@ -592,10 +592,10 @@ func rewriteDefData(data map[string]any, innerIDs, defIDs map[string]string) map
 		if mapped, hit := innerIDs[stringOf(m["id"])]; hit {
 			m["id"] = mapped
 		}
-		if typ := stringOf(m["type"]); IsSubflowInstance(typ) {
-			old := strings.TrimPrefix(typ, subflowTypePrefix)
+		if typ := stringOf(m["type"]); IsComponentInstance(typ) {
+			old := strings.TrimPrefix(typ, componentTypePrefix)
 			if mapped, hit := defIDs[old]; hit {
-				m["type"] = subflowTypePrefix + mapped
+				m["type"] = componentTypePrefix + mapped
 			}
 		}
 		if nd, ok := m["data"].(map[string]any); ok {
@@ -655,22 +655,22 @@ func rewriteDefData(data map[string]any, innerIDs, defIDs map[string]string) map
 	return out
 }
 
-// ImportModule merges a module envelope into w as a NEW module. All
-// ids are re-minted (module, nodes, edges, groups, definitions and
+// ImportChildFlow merges a child flow envelope into w as a NEW child flow. All
+// ids are re-minted (child flow, nodes, edges, groups, definitions and
 // their internal graphs) and every intra-payload reference is
 // rewritten; references pointing outside the payload are kept verbatim
 // and reported in the returned warnings when they do not resolve
 // against the target workflow. Returns the list of warnings.
-func ImportModule(w WorkflowInterface, raw []byte) ([]string, error) {
-	var payload ModuleExport
+func ImportChildFlow(w WorkflowInterface, raw []byte) ([]string, error) {
+	var payload ChildFlowExport
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("invalid module export JSON: %w", err)
+		return nil, fmt.Errorf("invalid child flow export JSON: %w", err)
 	}
-	if payload.Format != moduleExportFormat {
-		return nil, fmt.Errorf("not a module export (nodestore: %q)", payload.Format)
+	if payload.Format != childFlowExportFormat {
+		return nil, fmt.Errorf("not a child flow export (nodestore: %q)", payload.Format)
 	}
-	if payload.Version > moduleExportVersion {
-		return nil, fmt.Errorf("module export version %d is newer than supported %d", payload.Version, moduleExportVersion)
+	if payload.Version > childFlowExportVersion {
+		return nil, fmt.Errorf("child flow export version %d is newer than supported %d", payload.Version, childFlowExportVersion)
 	}
 	view := w.GetView()
 	if view == nil {
@@ -679,17 +679,17 @@ func ImportModule(w WorkflowInterface, raw []byte) ([]string, error) {
 	}
 
 	warnings := append([]string{}, payload.Warnings...)
-	newModuleID := generateID()
-	label := dedupeModuleLabel(w, stringOf(payload.Module["label"]))
+	newFlowID := generateID()
+	label := dedupeFlowLabel(w, stringOf(payload.ChildFlow["label"]))
 	if label == "" {
-		label = dedupeModuleLabel(w, "Imported module")
+		label = dedupeFlowLabel(w, "Imported child flow")
 	}
-	role := stringOf(payload.Module["role"])
+	role := stringOf(payload.ChildFlow["role"])
 	if role == "" {
 		role = "flow"
 	}
 	enabled := true
-	if en, ok := payload.Module["enabled"].(bool); ok {
+	if en, ok := payload.ChildFlow["enabled"].(bool); ok {
 		enabled = en
 	}
 
@@ -707,7 +707,7 @@ func ImportModule(w WorkflowInterface, raw []byte) ([]string, error) {
 				}
 			}
 		}
-		w.AddNode(NewNode(defIDs[d.GetID()], subflowDefNodeType).
+		w.AddNode(NewNode(defIDs[d.GetID()], componentDefNodeType).
 			SetPosition(d.GetPositionX(), d.GetPositionY()).
 			SetData(rewriteDefData(d.GetData(), innerIDs, defIDs)))
 	}
@@ -729,18 +729,18 @@ func ImportModule(w WorkflowInterface, raw []byte) ([]string, error) {
 			}
 		}
 		typ := n.GetType()
-		if IsSubflowInstance(typ) {
-			old := strings.TrimPrefix(typ, subflowTypePrefix)
+		if IsComponentInstance(typ) {
+			old := strings.TrimPrefix(typ, componentTypePrefix)
 			if mapped, hit := defIDs[old]; hit {
-				typ = subflowTypePrefix + mapped
+				typ = componentTypePrefix + mapped
 			} else {
 				warnings = append(warnings, fmt.Sprintf(
-					"subflow instance %q references definition %q, which is not in the payload — it will fail to deploy",
+					"component instance %q references definition %q, which is not in the payload — it will fail to deploy",
 					n.GetID(), old))
 			}
 		}
-		data["module"] = newModuleID
-		data["moduleName"] = label
+		data["childFlow"] = newFlowID
+		data["childFlowName"] = label
 		w.AddNode(NewNode(nodeIDs[n.GetID()], typ).
 			SetPosition(n.GetPositionX(), n.GetPositionY()).
 			SetData(data))
@@ -771,7 +771,7 @@ func ImportModule(w WorkflowInterface, raw []byte) ([]string, error) {
 			SetTargetKey(e.GetTargetKey()))
 	}
 
-	// Groups: new ids, module field rebound, member ids remapped.
+	// Groups: new ids, child flow field rebound, member ids remapped.
 	var groups []any
 	for _, g := range payload.Groups {
 		gm, ok := g.(map[string]any)
@@ -783,7 +783,7 @@ func ImportModule(w WorkflowInterface, raw []byte) ([]string, error) {
 			entry[k] = v
 		}
 		entry["id"] = generateID()
-		entry["module"] = newModuleID
+		entry["childFlow"] = newFlowID
 		var memberIDs []any
 		for _, m := range arrayOf(gm["nodeIds"]) {
 			if mapped, hit := nodeIDs[stringOf(m)]; hit {
@@ -800,23 +800,23 @@ func ImportModule(w WorkflowInterface, raw []byte) ([]string, error) {
 		view["groups"] = append(arrayOf(view["groups"]), groups...)
 	}
 
-	// Register the module entity; a disabled import also lands in
+	// Register the child flow entity; a disabled import also lands in
 	// view.disabledModules so the engine deploys its nodes inert.
 	entity := map[string]any{
-		"id":      newModuleID,
+		"id":      newFlowID,
 		"label":   label,
 		"role":    role,
 		"enabled": enabled,
 	}
-	if env := payload.Module["env"]; env != nil {
+	if env := payload.ChildFlow["env"]; env != nil {
 		entity["env"] = env
 	}
-	view["modules"] = append(arrayOf(view["modules"]), entity)
+	view["childFlows"] = append(arrayOf(view["childFlows"]), entity)
 	if !enabled {
-		view["disabledModules"] = append(arrayOf(view["disabledModules"]), newModuleID)
+		view["disabledFlows"] = append(arrayOf(view["disabledFlows"]), newFlowID)
 	}
 
-	log.Printf("ImportModule: imported module %q (%d nodes, %d edges, %d defs) into workflow %q",
+	log.Printf("ImportChildFlow: imported child flow %q (%d nodes, %d edges, %d defs) into workflow %q",
 		label, len(payload.Nodes), len(payload.Edges), len(payload.Defs), w.GetID())
 	return warnings, nil
 }

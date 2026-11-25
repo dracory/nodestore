@@ -20,7 +20,7 @@ func plaintextCredentialKey(nodeType string, data map[string]any) string {
 }
 
 // validateNodeCredentialSentinels rejects a node whose data carries a
-// plaintext credential value (including inner nodes of subflow
+// plaintext credential value (including inner nodes of component
 // definitions). Enforced on every write so secrets can never be
 // persisted in node documents by mistake.
 func validateNodeCredentialSentinels(n NodeInterface) error {
@@ -30,11 +30,11 @@ func validateNodeCredentialSentinels(n NodeInterface) error {
 	if key := plaintextCredentialKey(n.GetType(), n.GetData()); key != "" {
 		return fmt.Errorf("node %q (%s): credential key %q holds a plaintext value — persist secrets via Credential entities, not node data", n.GetID(), n.GetType(), key)
 	}
-	if n.GetType() == subflowDefNodeType {
+	if n.GetType() == componentDefNodeType {
 		for _, m := range innerNodeData(n.GetData()) {
 			inner, _ := m["data"].(map[string]any)
 			if key := plaintextCredentialKey(stringOf(m["type"]), inner); key != "" {
-				return fmt.Errorf("subflow definition %q: inner node %q (%s) credential key %q holds a plaintext value", n.GetID(), stringOf(m["id"]), stringOf(m["type"]), key)
+				return fmt.Errorf("component definition %q: inner node %q (%s) credential key %q holds a plaintext value", n.GetID(), stringOf(m["id"]), stringOf(m["type"]), key)
 			}
 		}
 	}
@@ -70,7 +70,7 @@ func validateFlowJSONCredentials(raw string) error {
 // objects — anything with a string "type" — and checks their
 // credential keys both inline (Node-RED flat shape) and under "data"
 // (backend/inner-node shape). Recurses into nested structures so
-// subflow definition graphs are covered.
+// component definition graphs are covered.
 func scanJSONForPlaintextCredential(v any) (key, nodeType string, found bool) {
 	switch t := v.(type) {
 	case map[string]any:
@@ -153,7 +153,7 @@ func extractCredentialFields(nodeType string, data map[string]any, existing map[
 	return out
 }
 
-// innerNodeData returns the data maps of a subflow definition's inner
+// innerNodeData returns the data maps of a component definition's inner
 // nodes (stored in Data["nodes"] as {id, type, data, ...} objects).
 func innerNodeData(data map[string]any) []map[string]any {
 	rawNodes, _ := data["nodes"].([]any)
@@ -195,9 +195,9 @@ func ExtractWorkflowCredentials(w WorkflowInterface, existing map[string]map[str
 			continue
 		}
 		put(n.GetID(), extractCredentialFields(n.GetType(), data, existing[n.GetID()]))
-		// Subflow definitions carry inner nodes inside Data["nodes"];
+		// Component definitions carry inner nodes inside Data["nodes"];
 		// their credentials live in the same store keyed by inner id.
-		if n.GetType() == "subflow" {
+		if n.GetType() == componentDefNodeType {
 			for _, m := range innerNodeData(data) {
 				id, _ := m["id"].(string)
 				typ, _ := m["type"].(string)
@@ -270,7 +270,7 @@ func ApplyWorkflowCredentials(w WorkflowInterface, creds map[string]map[string]s
 			continue
 		}
 		applyCredentialFields(n.GetType(), data, creds[n.GetID()])
-		if n.GetType() == "subflow" {
+		if n.GetType() == componentDefNodeType {
 			for _, m := range innerNodeData(data) {
 				id, _ := m["id"].(string)
 				typ, _ := m["type"].(string)

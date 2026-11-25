@@ -192,11 +192,11 @@ func TestNodeREDMultiTabSwitch(t *testing.T) {
 	if sw == nil || inj == nil {
 		t.Fatalf("switch or inject node missing after import")
 	}
-	if stringOf(sw.GetData()["module"]) != "First" {
-		t.Errorf("switch module = %q, want First", sw.GetData()["module"])
+	if stringOf(sw.GetData()["childFlow"]) != "First" {
+		t.Errorf("switch module = %q, want First", sw.GetData()["childFlow"])
 	}
-	if stringOf(inj.GetData()["module"]) != "Second" {
-		t.Errorf("inject module = %q, want Second", inj.GetData()["module"])
+	if stringOf(inj.GetData()["childFlow"]) != "Second" {
+		t.Errorf("inject module = %q, want Second", inj.GetData()["childFlow"])
 	}
 	debugs := nodesByType(w, "debug")
 	if len(debugs) != 3 {
@@ -204,7 +204,7 @@ func TestNodeREDMultiTabSwitch(t *testing.T) {
 	}
 	mods := map[string]int{}
 	for _, d := range debugs {
-		mods[stringOf(d.GetData()["module"])]++
+		mods[stringOf(d.GetData()["childFlow"])]++
 	}
 	if mods["First"] != 1 || mods["Second"] != 2 {
 		t.Errorf("debug module spread = %v, want First:1 Second:2", mods)
