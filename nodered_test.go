@@ -2,6 +2,7 @@ package nodestore
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -186,7 +187,7 @@ func TestNodeREDMultiTabSwitch(t *testing.T) {
 	}
 
 	// z -> module mapping (ids are re-minted on import; nodes are
-	// located by type and their data.module label survives verbatim).
+	// located by type and their data.childFlow label survives verbatim).
 	sw := nodeByType(w, "switch")
 	inj := nodeByType(w, "inject")
 	if sw == nil || inj == nil {
@@ -381,4 +382,96 @@ func TestNodeREDMQTTBrokerImport(t *testing.T) {
 	if stringOf(out.GetData()["broker"]) != broker.GetID() {
 		t.Fatalf("mqttOut broker ref not remapped to config node id: %v", out.GetData()["broker"])
 	}
+}
+
+// TestNodeREDComponentInstanceBoundaryRoundTrip proves the semantic
+// boundary mapping in both directions: external Node-RED subflow:<id>
+// instances import as canonical component:<id> instances remapped to the
+// re-minted definition id, and exports restore Node-RED's subflow:<id>
+// spelling without leaking internal component types.
+func TestNodeREDComponentInstanceBoundaryRoundTrip(t *testing.T) {
+	flowJSON := `[
+		{"id":"tab1","type":"tab","label":"Main"},
+		{"id":"defX","type":"subflow","name":"Wrap","info":"",
+		 "in":[{"x":40,"y":40,"wires":[{"id":"innerFn"}]}],
+		 "out":[{"x":300,"y":40,"wires":[{"id":"innerFn","port":0}]}],
+		 "env":[{"name":"GREETING","type":"str","value":"hello"}]},
+		{"id":"innerFn","type":"function","z":"defX","x":170,"y":40,
+		 "func":"return msg;","outputs":1,"wires":[[]]},
+		{"id":"inj","type":"inject","z":"tab1","payload":"hi","payloadType":"str","wires":[["inst"]]},
+		{"id":"inst","type":"subflow:defX","z":"tab1","name":"Wrap 1","wires":[["dbg"]]},
+		{"id":"dbg","type":"debug","z":"tab1","active":true,"wires":[[]]}
+	]`
+
+	assertCanonical := func(w WorkflowInterface, phase string) {
+		def := nodeByType(w, componentDefNodeType)
+		if def == nil {
+			t.Fatalf("%s: component definition missing", phase)
+		}
+		var inst NodeInterface
+		for _, n := range w.GetNodes() {
+			if strings.HasPrefix(n.GetType(), "subflow:") {
+				t.Fatalf("%s: external instance type leaked into internal model: %q", phase, n.GetType())
+			}
+			if IsComponentInstance(n.GetType()) {
+				inst = n
+			}
+		}
+		if inst == nil {
+			t.Fatalf("%s: component instance missing", phase)
+		}
+		if inst.GetType() != componentTypePrefix+def.GetID() {
+			t.Fatalf("%s: instance type = %q, want %q", phase, inst.GetType(), componentTypePrefix+def.GetID())
+		}
+		if len(arrayOf(def.GetData()["nodes"])) != 1 {
+			t.Fatalf("%s: definition internal nodes = %v", phase, def.GetData()["nodes"])
+		}
+	}
+
+	w, err := ImportNodeRED([]byte(flowJSON))
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	assertCanonical(w, "import")
+
+	raw, err := ExportNodeRED(w)
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+	var items []map[string]any
+	if err := json.Unmarshal(raw, &items); err != nil {
+		t.Fatalf("export produced invalid JSON: %v", err)
+	}
+	defIDs := map[string]bool{}
+	for _, it := range items {
+		if stringOf(it["type"]) == "subflow" {
+			defIDs[stringOf(it["id"])] = true
+		}
+	}
+	if len(defIDs) != 1 {
+		t.Fatalf("exported subflow definitions = %v", defIDs)
+	}
+	instances := 0
+	for _, it := range items {
+		typ := stringOf(it["type"])
+		if typ == componentDefNodeType || strings.HasPrefix(typ, componentTypePrefix) {
+			t.Fatalf("internal component type leaked into Node-RED export: %q", typ)
+		}
+		if strings.HasPrefix(typ, "subflow:") {
+			id := strings.TrimPrefix(typ, "subflow:")
+			if !defIDs[id] {
+				t.Fatalf("exported instance references missing definition %q", id)
+			}
+			instances++
+		}
+	}
+	if instances != 1 {
+		t.Fatalf("exported subflow instances = %d, want 1", instances)
+	}
+
+	w2, err := ImportNodeRED(raw)
+	if err != nil {
+		t.Fatalf("re-import failed: %v", err)
+	}
+	assertCanonical(w2, "round-trip re-import")
 }

@@ -26,7 +26,7 @@ Query builders (`WorkflowQuery`, `NodeQuery`, `EdgeQuery`,
 Also included:
 
 - Node-RED flow JSON import/export (type-name mapping both ways)
-- Subflow/module composition helpers
+- Component/child-flow composition helpers
 - Key/value config store (global env, editor settings)
 
 ## Usage

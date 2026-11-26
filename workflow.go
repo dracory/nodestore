@@ -121,6 +121,7 @@ func workflowFromEntity(entity entitystore.EntityInterface, attrs map[string]str
 			return nil, err
 		}
 	}
+	normalizeLegacyViewTerminology(w.view)
 	return w, nil
 }
 

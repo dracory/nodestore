@@ -47,7 +47,7 @@ type NodeInterface interface {
 // == IMPLEMENTATION ==========================================================
 
 // nodeJSON mirrors flowrunner.Node's JSON shape for round-trip fidelity
-// (used by module exchange, Node-RED import and the legacy blob fallback)
+// (used by child flow exchange, Node-RED import and the legacy blob fallback)
 type nodeJSON struct {
 	ID       string         `json:"id"`
 	Type     string         `json:"type"`
@@ -115,6 +115,7 @@ func nodeFromEntity(entity entitystore.EntityInterface, attrs map[string]string)
 			return nil, err
 		}
 	}
+	normalizeLegacyNodeTerminology(n)
 	return n, nil
 }
 
@@ -205,5 +206,6 @@ func nodeFromJSON(j nodeJSON) NodeInterface {
 	if j.Data != nil {
 		node.SetData(j.Data)
 	}
+	normalizeLegacyNodeTerminology(node)
 	return node
 }

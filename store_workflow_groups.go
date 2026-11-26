@@ -12,7 +12,7 @@ import (
 //
 // Read path: loadWorkflowGroups synthesizes view["groups"] from the
 // workflow's node_group entities whenever they exist, so every consumer
-// (editor, Node-RED export, module exchange) keeps the same wire shape
+// (editor, Node-RED export, child flow exchange) keeps the same wire shape
 // while the data comes from entities.
 //
 // Write path: syncWorkflowGroups runs inside WorkflowCreate/Update —

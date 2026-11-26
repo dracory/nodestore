@@ -14,17 +14,18 @@ import (
 // and the Node-RED flow JSON array. Node-RED stores a flow file as a
 // flat array of objects:
 //
-//   - {id, type:"tab", label}                    — flow tabs (modules)
+//   - {id, type:"tab", label}                    — flow tabs (child flows)
 //   - {id, type:"subflow", name, in, out, env}   — subflow definitions
 //   - {id, type, z, x, y, wires, ...config}      — regular nodes;
 //     z is the owning tab or subflow id, wires[i] is the list of
 //     target node ids fed by output port i+1
 //
-// The engine keeps subflow definitions as a node of type "subflow" whose
-// Data carries in/out/env plus "nodes"/"edges" for the internal
-// graph; Node-RED instead stores the internal nodes flat in the array
-// with z = <defId>. ImportNodeRED folds those in; ExportNodeRED
-// unfolds them back out so a Node-RED export round-trips.
+// The engine keeps component definitions as a node of type "component"
+// whose Data carries in/out/env plus "nodes"/"edges" for the internal
+// graph. Node-RED instead stores external subflow definitions and their
+// internal nodes flat in the array with z = <defId>. ImportNodeRED folds
+// those in and maps subflow:<id> instances to component:<id>;
+// ExportNodeRED unfolds them back out and restores the external spelling.
 
 // generateID generates a unique ID for workflow elements (RFC 9562
 // UUIDv7 — time-ordered, random suffix, same role as Node-RED's random
@@ -33,11 +34,11 @@ func generateID() string {
 	return uuid.NewV7().String()
 }
 
-// nodeREDTabMap maps an engine module name to the object id of the tab
+// nodeREDTabMap maps an engine child flow name to the object id of the tab
 // created for it on export.
 type nodeREDTabMap map[string]string
 
-// nodeREDTabID returns a deterministic tab id for a module name so
+// nodeREDTabID returns a deterministic tab id for a child flow name so
 // repeated exports of the same workflow produce stable, diffable ids.
 func nodeREDTabID(flow string) string {
 	h := fnv.New32a()
@@ -87,18 +88,32 @@ var internalTypeToNodeRED = func() map[string]string {
 
 // importType maps a Node-RED type name to the engine executor type;
 // unmapped names pass through verbatim (unknown-node handling).
+// Node-RED's external subflow:<id> instance spelling maps to the
+// canonical internal component:<id> spelling here — the boundary is
+// the only place the external name is interpreted.
 func importType(nrType string) string {
 	if mod, ok := nodeREDTypeToInternal[nrType]; ok {
 		return mod
+	}
+	if strings.HasPrefix(nrType, "subflow:") {
+		if id := strings.TrimPrefix(nrType, "subflow:"); id != "" {
+			return componentTypePrefix + id
+		}
 	}
 	return nrType
 }
 
 // exportType maps an engine executor type back to the Node-RED spelling;
-// unmapped names pass through verbatim.
+// unmapped names pass through verbatim. Canonical component:<id>
+// instances map back to Node-RED's external subflow:<id> contract.
 func exportType(modType string) string {
 	if nr, ok := internalTypeToNodeRED[modType]; ok {
 		return nr
+	}
+	if strings.HasPrefix(modType, componentTypePrefix) {
+		if id := strings.TrimPrefix(modType, componentTypePrefix); id != "" {
+			return "subflow:" + id
+		}
 	}
 	return modType
 }
@@ -127,8 +142,8 @@ func exportLinkCallData(obj map[string]any) {
 // ImportNodeRED converts a Node-RED flow JSON array into a workflow.
 // Regular nodes keep their config keys verbatim in Data (engine node
 // configs use the Node-RED field names); tab membership becomes
-// Data["module"]; wires become edges. Subflow definitions and their
-// internal nodes fold into a single type:"subflow" node.
+// Data["childFlow"]; wires become edges. Node-RED subflow definitions
+// and their internal nodes fold into a single type:"component" node.
 func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 	var items []map[string]any
 	if err := json.Unmarshal(data, &items); err != nil {
@@ -258,11 +273,11 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 		}
 	}
 
-	// Disabled tabs map onto the engine's per-module disabled flag:
-	// view.disabledModules lists the module references — labels here,
+	// Disabled tabs map onto the child-flow disabled flag:
+	// view.disabledFlows lists the child flow references — labels here,
 	// since import predates the id-keyed model; the editor migrates
 	// them to ids on the next save, and the engine resolves either
-	// form through view.modules.
+	// form through view.childFlows.
 	if len(tabDisabled) > 0 {
 		var disabledFlows []any
 		for _, obj := range items {
@@ -274,7 +289,7 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 	}
 
 	// Node-RED group objects become view.groups entries — the same
-	// flat shape the editor persists ({id, module, name, x, y, w, h,
+	// flat shape the editor persists ({id, childFlow, name, x, y, w, h,
 	// nodeIds, disabled}).
 	if len(groupObjs) > 0 {
 		var viewGroups []any
@@ -316,9 +331,9 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 }
 
 // remapImportedWorkflowIDs re-mints every id carried in from an
-// imported document — regular nodes, subflow definitions and their
+// imported document — regular nodes, component definitions and their
 // internal graphs — and rewrites edges, node-id references, group
-// membership and "subflow:<defID>" instance types to the new ids.
+// membership and component:<defID> instance types to the new ids.
 // External (dangling) references pass through untouched.
 func remapImportedWorkflowIDs(w WorkflowInterface) {
 	nodeIDs := map[string]string{}
@@ -386,7 +401,7 @@ func remapImportedWorkflowIDs(w WorkflowInterface) {
 }
 
 // nodeREDToNode converts one flat Node-RED node object into a backend
-// node plus its outgoing edges. module is the owning tab label.
+// node plus its outgoing edges. flow is the owning tab label.
 func nodeREDToNode(obj map[string]any, flow string) (NodeInterface, []EdgeInterface) {
 	id := stringOf(obj["id"])
 	node := NewNode(id, importType(stringOf(obj["type"]))).
@@ -465,13 +480,13 @@ func nodeREDNodeToInternal(obj map[string]any) (map[string]any, []any) {
 }
 
 // ExportNodeRED converts a workflow into the Node-RED flow JSON array
-// shape. Subflow definitions unfold: the type:"subflow" object is
-// followed by its internal nodes as flat objects with z = <defId>.
+// shape. Node-RED subflow definitions unfold: the type:"subflow" object
+// is followed by its internal nodes as flat objects with z = <defId>.
 func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 	var items []map[string]any
 
-	// Tabs: one per distinct module, stable order for diffability.
-	// data.module stores the module id under the id-keyed model (a
+	// Tabs: one per distinct child flow, stable order for diffability.
+	// data.childFlow stores the child flow id under the id-keyed model (a
 	// name in legacy documents) — resolve to the display label, which
 	// is what Node-RED tabs carry.
 	tabs := nodeREDTabMap{}
@@ -505,7 +520,7 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 		for _, m := range arrayOf(view["disabledFlows"]) {
 			disabledMods[flowLabel(w, stringOf(m))] = true
 		}
-		// Module entities flagged enabled:false count as disabled too.
+		// Child flow entities flagged enabled:false count as disabled too.
 		for _, m := range arrayOf(view["childFlows"]) {
 			if mm, ok := m.(map[string]any); ok {
 				if en, isBool := mm["enabled"].(bool); isBool && !en {
@@ -523,7 +538,7 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 		if flowEnv != nil {
 			tab["env"] = flowEnv
 		}
-		// A module listed in view.disabledModules exports as a
+		// A child flow listed in view.disabledFlows exports as a
 		// Node-RED disabled tab (disabled flow).
 		if disabledMods[mod] {
 			tab["disabled"] = true
@@ -544,7 +559,7 @@ func ExportNodeRED(w WorkflowInterface) ([]byte, error) {
 			}
 			zid := tabs[mod]
 			if zid == "" {
-				continue // group whose module has no nodes — no tab to hang it on
+				continue // group whose child flow has no nodes — no tab to hang it on
 			}
 			obj := map[string]any{
 				"id":    stringOf(gm["id"]),

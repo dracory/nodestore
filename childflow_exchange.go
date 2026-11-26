@@ -125,6 +125,31 @@ func (e *ChildFlowExport) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		return err
 	}
+
+	// Legacy v1 envelopes used nodestore:"module" and a top-level
+	// "module" meta object. Treat them as migration input and normalize
+	// them into the canonical child_flow shape before import.
+	if wire.Format == "module" {
+		wire.Format = childFlowExportFormat
+	}
+	if wire.ChildFlow == nil {
+		var legacy struct {
+			Module map[string]any `json:"module"`
+		}
+		if err := json.Unmarshal(raw, &legacy); err != nil {
+			return err
+		}
+		wire.ChildFlow = legacy.Module
+	}
+	if wire.ChildFlow != nil && wire.ChildFlow["role"] == "subflow" {
+		wire.ChildFlow["role"] = "component"
+	}
+	if len(wire.Groups) > 0 {
+		legacyView := map[string]any{"groups": wire.Groups}
+		normalizeLegacyViewTerminology(legacyView)
+		wire.Groups, _ = legacyView["groups"].([]any)
+	}
+
 	e.Format = wire.Format
 	e.Version = wire.Version
 	e.ChildFlow = wire.ChildFlow
@@ -152,7 +177,7 @@ func (e *ChildFlowExport) UnmarshalJSON(raw []byte) error {
 // workflow view["childFlows"] entries of shape {id, label, role,
 // enabled, env}. Documents written before the migration carry the
 // child flow name in Data["childFlow"] instead — and in
-// view.disabledModules / view.groups[].child flow — so every consumer
+// view.disabledFlows / view.groups[].childFlow — so every consumer
 // resolves references through the entity list, accepting either form.
 
 // flowLabel resolves a child flow reference — a child flow id or a legacy
@@ -378,7 +403,7 @@ func ExportChildFlow(w WorkflowInterface, flowRef string) (*ChildFlowExport, err
 		meta["role"] = "flow"
 	}
 	if _, has := meta["enabled"]; !has {
-		// view.disabledModules covers child flows whose entity lacks the
+		// view.disabledFlows covers child flows whose entity lacks the
 		// enabled flag (legacy documents).
 		disabled := false
 		for _, m := range arrayOf(w.GetView()["disabledFlows"]) {
@@ -801,7 +826,7 @@ func ImportChildFlow(w WorkflowInterface, raw []byte) ([]string, error) {
 	}
 
 	// Register the child flow entity; a disabled import also lands in
-	// view.disabledModules so the engine deploys its nodes inert.
+	// view.disabledFlows so the engine deploys its nodes inert.
 	entity := map[string]any{
 		"id":      newFlowID,
 		"label":   label,
