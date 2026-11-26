@@ -2,6 +2,7 @@ package nodestore
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/dracory/entitystore"
@@ -76,16 +77,22 @@ func messageFromEntity(entity entitystore.EntityInterface, attrs map[string]stri
 	m := &messageImplementation{entity: entity, metadata: map[string]any{}}
 
 	if raw := attrs[ATTRIBUTE_PAYLOAD]; raw != "" {
-		var payload any
-		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		payload, err := UnmarshalPayloadJSON([]byte(raw))
+		if err != nil {
 			return nil, err
 		}
 		m.payload = payload
 	}
 	if raw := attrs[ATTRIBUTE_METADATA]; raw != "" {
-		if err := json.Unmarshal([]byte(raw), &m.metadata); err != nil {
+		metadata, err := UnmarshalPayloadJSON([]byte(raw))
+		if err != nil {
 			return nil, err
 		}
+		metadataMap, ok := metadata.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("message metadata is not a JSON object")
+		}
+		m.metadata = metadataMap
 	}
 	if raw := attrs[ATTRIBUTE_ERROR]; raw != "" {
 		m.err = &raw
@@ -100,11 +107,11 @@ func messageFromEntity(entity entitystore.EntityInterface, attrs map[string]stri
 }
 
 func (m *messageImplementation) attributes() (map[string]string, error) {
-	payload, err := json.Marshal(m.payload)
+	payload, err := MarshalPayloadJSON(m.payload)
 	if err != nil {
 		return nil, err
 	}
-	metadata, err := json.Marshal(m.metadata)
+	metadata, err := MarshalPayloadJSON(m.metadata)
 	if err != nil {
 		return nil, err
 	}
