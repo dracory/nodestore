@@ -128,6 +128,41 @@ func TestMessageNestedBinaryPayloadDurableRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMarshalPayloadJSONTypedCompositeBinaryValues(t *testing.T) {
+	type byteSlice []byte
+	type stringMap map[string]any
+	payload := map[string]any{
+		"nested": [][]byte{{1, 2}, {3, 0xff}},
+		"array":  [2][]byte{{4}, {5}},
+		"alias":  byteSlice{6, 7},
+		"typed":  stringMap{"blob": []byte{8}},
+	}
+	raw, err := MarshalPayloadJSON(payload)
+	if err != nil {
+		t.Fatal("marshal:", err)
+	}
+	decoded, err := UnmarshalPayloadJSON(raw)
+	if err != nil {
+		t.Fatal("unmarshal:", err)
+	}
+	root := decoded.(map[string]any)
+	nested := root["nested"].([]any)
+	if got, ok := nested[0].([]byte); !ok || !bytes.Equal(got, []byte{1, 2}) {
+		t.Fatalf("[][]byte leaf not preserved: %#v (%T)", nested[0], nested[0])
+	}
+	array := root["array"].([]any)
+	if got, ok := array[1].([]byte); !ok || !bytes.Equal(got, []byte{5}) {
+		t.Fatalf("array byte-slice leaf not preserved: %#v (%T)", array[1], array[1])
+	}
+	if got, ok := root["alias"].([]byte); !ok || !bytes.Equal(got, []byte{6, 7}) {
+		t.Fatalf("named byte slice not preserved: %#v (%T)", root["alias"], root["alias"])
+	}
+	typed := root["typed"].(map[string]any)
+	if got, ok := typed["blob"].([]byte); !ok || !bytes.Equal(got, []byte{8}) {
+		t.Fatalf("typed map byte leaf not preserved: %#v (%T)", typed["blob"], typed["blob"])
+	}
+}
+
 func TestMessageScalarPayloadRoundTripsRemainUnchanged(t *testing.T) {
 	store := initTestStore(t)
 	ctx := context.Background()

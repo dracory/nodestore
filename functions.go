@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -85,12 +86,7 @@ func UnmarshalPayloadJSON(raw []byte) (any, error) {
 func encodePayloadBinaryValues(value any) any {
 	switch v := value.(type) {
 	case []byte:
-		return map[string]any{
-			BinaryPayloadWireKey: binaryPayloadJSON{
-				Encoding: BinaryPayloadEncodingBase64,
-				Data:     base64.StdEncoding.EncodeToString(v),
-			},
-		}
+		return binaryPayloadWire(v)
 	case map[string]any:
 		out := make(map[string]any, len(v))
 		for key, item := range v {
@@ -101,6 +97,59 @@ func encodePayloadBinaryValues(value any) any {
 		out := make([]any, len(v))
 		for i, item := range v {
 			out[i] = encodePayloadBinaryValues(item)
+		}
+		return out
+	default:
+		return encodePayloadCompositeValues(value)
+	}
+}
+
+func binaryPayloadWire(data []byte) map[string]any {
+	return map[string]any{
+		BinaryPayloadWireKey: binaryPayloadJSON{
+			Encoding: BinaryPayloadEncodingBase64,
+			Data:     base64.StdEncoding.EncodeToString(data),
+		},
+	}
+}
+
+// encodePayloadCompositeValues extends the recursive contract beyond the
+// dynamically typed JSON shapes to typed string-keyed maps, slices, and
+// arrays. Byte slices (including named []byte forms) become binary wire
+// objects; other elements recurse so forms such as [][]byte are covered.
+func encodePayloadCompositeValues(value any) any {
+	if _, ok := value.(json.Marshaler); ok {
+		return value
+	}
+	rv := reflect.ValueOf(value)
+	if !rv.IsValid() {
+		return value
+	}
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array:
+		if rv.Kind() == reflect.Slice && rv.IsNil() {
+			return value
+		}
+		if rv.Type().Elem().Kind() == reflect.Uint8 {
+			data := make([]byte, rv.Len())
+			for i := range data {
+				data[i] = byte(rv.Index(i).Uint())
+			}
+			return binaryPayloadWire(data)
+		}
+		out := make([]any, rv.Len())
+		for i := range out {
+			out[i] = encodePayloadBinaryValues(rv.Index(i).Interface())
+		}
+		return out
+	case reflect.Map:
+		if rv.IsNil() || rv.Type().Key().Kind() != reflect.String {
+			return value
+		}
+		out := make(map[string]any, rv.Len())
+		iter := rv.MapRange()
+		for iter.Next() {
+			out[iter.Key().String()] = encodePayloadBinaryValues(iter.Value().Interface())
 		}
 		return out
 	default:
