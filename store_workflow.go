@@ -68,11 +68,16 @@ func (st *Store) WorkflowCreate(ctx context.Context, workflow WorkflowInterface)
 }
 
 // WorkflowDeleteByID deletes the workflow AND its child node/edge
-// entities (cascade — documented behavior; children are never orphaned).
+// entities plus workflow-owned runtime context (cascade — documented
+// behavior; children and owned state are never orphaned). Context
+// values with no workflow owner, including global context, are preserved.
 func (st *Store) WorkflowDeleteByID(ctx context.Context, id string) error {
 	unlock := st.lockWorkflow(id)
 	defer unlock()
 	if err := st.deleteWorkflowChildren(ctx, id); err != nil {
+		return err
+	}
+	if err := st.ContextValueDeleteByWorkflowID(ctx, id); err != nil {
 		return err
 	}
 	_, err := st.entityStore.EntityDelete(ctx, id)
