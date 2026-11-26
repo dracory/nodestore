@@ -44,12 +44,9 @@ func contextValueEntityID(scope, scopeID, key string) string {
 	return "ctx-" + hex.EncodeToString(sum[:])[:32]
 }
 
-func validateContextValueKey(scope, key string) error {
+func validateContextValueScope(scope string) error {
 	if scope == "" {
 		return errors.New("context value: scope is required")
-	}
-	if key == "" {
-		return errors.New("context value: key is required")
 	}
 	return nil
 }
@@ -57,7 +54,7 @@ func validateContextValueKey(scope, key string) error {
 // ContextValueGet returns the serialized value stored under key in a
 // scope bucket. ok is false when the key has never been set.
 func (st *Store) ContextValueGet(ctx context.Context, scope, scopeID, key string) (string, bool, error) {
-	if err := validateContextValueKey(scope, key); err != nil {
+	if err := validateContextValueScope(scope); err != nil {
 		return "", false, err
 	}
 	entity, err := st.entityStore.EntityFindByID(ctx, contextValueEntityID(scope, scopeID, key))
@@ -78,7 +75,7 @@ func (st *Store) ContextValueGet(ctx context.Context, scope, scopeID, key string
 // as ownership metadata for cascade deletion; it is empty for values
 // not owned by a workflow (notably global context).
 func (st *Store) ContextValueSet(ctx context.Context, workflowID, scope, scopeID, key, value string) error {
-	if err := validateContextValueKey(scope, key); err != nil {
+	if err := validateContextValueScope(scope); err != nil {
 		return err
 	}
 	id := contextValueEntityID(scope, scopeID, key)
@@ -117,7 +114,7 @@ func (st *Store) ContextValueSet(ctx context.Context, workflowID, scope, scopeID
 
 // ContextValueDelete removes one key. A missing key is not an error.
 func (st *Store) ContextValueDelete(ctx context.Context, scope, scopeID, key string) error {
-	if err := validateContextValueKey(scope, key); err != nil {
+	if err := validateContextValueScope(scope); err != nil {
 		return err
 	}
 	_, err := st.entityStore.EntityDelete(ctx, contextValueEntityID(scope, scopeID, key))
@@ -181,8 +178,8 @@ func (st *Store) ContextValueKeys(ctx context.Context, scope, scopeID string) ([
 		if err != nil {
 			return nil, err
 		}
-		key := attrs[ATTRIBUTE_CONTEXT_KEY]
-		if key == "" || seen[key] {
+		key, hasKey := attrs[ATTRIBUTE_CONTEXT_KEY]
+		if !hasKey || seen[key] {
 			continue
 		}
 		seen[key] = true

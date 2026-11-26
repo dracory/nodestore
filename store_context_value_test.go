@@ -50,8 +50,19 @@ func TestContextValueRoundTripKeysAndDelete(t *testing.T) {
 	if err := store.ContextValueSet(ctx, "", "global", "", "shared", `"g"`); err != nil {
 		t.Fatalf("set global: %v", err)
 	}
+	if err := store.ContextValueSet(ctx, "wf-empty", "flow", "wf-empty", "", `"empty-key"`); err != nil {
+		t.Fatalf("set empty key: %v", err)
+	}
 
-	value, ok, err := store.ContextValueGet(ctx, "flow", "wf1", "alpha")
+	value, ok, err := store.ContextValueGet(ctx, "flow", "wf-empty", "")
+	if err != nil || !ok || value != `"empty-key"` {
+		t.Fatalf("empty key get: value=%q ok=%v err=%v", value, ok, err)
+	}
+	if keys, err := store.ContextValueKeys(ctx, "flow", "wf-empty"); err != nil || !reflect.DeepEqual(keys, []string{""}) {
+		t.Fatalf("empty key not listed: %v err=%v", keys, err)
+	}
+
+	value, ok, err = store.ContextValueGet(ctx, "flow", "wf1", "alpha")
 	if err != nil || !ok || value != `"a"` {
 		t.Fatalf("flow get: value=%q ok=%v err=%v", value, ok, err)
 	}
