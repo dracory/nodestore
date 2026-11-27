@@ -11,7 +11,8 @@ func TestWorkflowCreateFindUpdate(t *testing.T) {
 
 	workflow := NewWorkflow("Daily Report").
 		SetDescription("sends the daily report").
-		SetDeployed(true)
+		SetDeployed(true).
+		SetPaused(true)
 
 	node := NewNode("n1", "inject").SetPosition(10, 20)
 	node.SetData(map[string]any{"interval": "60"})
@@ -30,8 +31,8 @@ func TestWorkflowCreateFindUpdate(t *testing.T) {
 	if found == nil {
 		t.Fatal("find: workflow not found")
 	}
-	if found.GetName() != "Daily Report" || !found.GetDeployed() {
-		t.Fatal("name/deployed mismatch")
+	if found.GetName() != "Daily Report" || !found.GetDeployed() || !found.GetPaused() {
+		t.Fatal("name/deployed/paused mismatch")
 	}
 	if len(found.GetNodes()) != 2 || len(found.GetEdges()) != 1 {
 		t.Fatal("nodes/edges count mismatch")
@@ -53,16 +54,16 @@ func TestWorkflowCreateFindUpdate(t *testing.T) {
 		t.Fatal("find by name failed")
 	}
 
-	found.SetDescription("updated").SetDeployed(false)
+	found.SetDescription("updated").SetDeployed(false).SetPaused(false)
 	if err := store.WorkflowUpdate(ctx, found); err != nil {
 		t.Fatal("update:", err)
 	}
 	reloaded, _ := store.WorkflowFindByID(ctx, workflow.GetID())
-	if reloaded.GetDescription() != "updated" || reloaded.GetDeployed() {
+	if reloaded.GetDescription() != "updated" || reloaded.GetDeployed() || reloaded.GetPaused() {
 		t.Fatal("update round-trip mismatch")
 	}
 
-	count, err := store.WorkflowCount(ctx, WorkflowQuery().WithDeployed(false))
+	count, err := store.WorkflowCount(ctx, WorkflowQuery().WithDeployed(false).WithPaused(false))
 	if err != nil || count != 1 {
 		t.Fatal("count mismatch")
 	}

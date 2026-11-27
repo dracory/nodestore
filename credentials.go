@@ -236,6 +236,7 @@ func DeepCloneWorkflow(w WorkflowInterface) WorkflowInterface {
 		SetID(w.GetID()).
 		SetDescription(w.GetDescription()).
 		SetDeployed(w.GetDeployed()).
+		SetPaused(w.GetPaused()).
 		SetCreatedAt(w.GetCreatedAt()).
 		SetUpdatedAt(w.GetUpdatedAt())
 	c.SetView(w.GetView())

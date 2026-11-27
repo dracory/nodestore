@@ -36,6 +36,9 @@ type WorkflowInterface interface {
 	GetDeployed() bool
 	SetDeployed(deployed bool) WorkflowInterface
 
+	GetPaused() bool
+	SetPaused(paused bool) WorkflowInterface
+
 	GetCreatedAt() time.Time
 	SetCreatedAt(createdAt time.Time) WorkflowInterface
 
@@ -53,6 +56,7 @@ type workflowImplementation struct {
 	edges       []EdgeInterface
 	view        map[string]any
 	deployed    bool
+	paused      bool
 }
 
 // NewWorkflow creates a new workflow
@@ -80,6 +84,7 @@ var workflowManagedAttributes = map[string]bool{
 	ATTRIBUTE_EDGES:       true, // legacy, cleaned up on update
 	ATTRIBUTE_VIEW:        true,
 	ATTRIBUTE_DEPLOYED:    true,
+	ATTRIBUTE_PAUSED:      true,
 }
 
 // workflowFromEntity rebuilds a workflow from a persisted entity + its
@@ -97,6 +102,7 @@ func workflowFromEntity(entity entitystore.EntityInterface, attrs map[string]str
 	w.name = attrs[ATTRIBUTE_NAME]
 	w.description = attrs[ATTRIBUTE_DESCRIPTION]
 	w.deployed = attrs[ATTRIBUTE_DEPLOYED] == "true"
+	w.paused = attrs[ATTRIBUTE_PAUSED] == "true"
 
 	if raw := attrs[ATTRIBUTE_NODES]; raw != "" {
 		var list []nodeJSON
@@ -147,12 +153,17 @@ func (w *workflowImplementation) attributes() (map[string]string, error) {
 	if w.deployed {
 		deployed = "true"
 	}
+	paused := "false"
+	if w.paused {
+		paused = "true"
+	}
 
 	return map[string]string{
 		ATTRIBUTE_NAME:        w.name,
 		ATTRIBUTE_DESCRIPTION: w.description,
 		ATTRIBUTE_VIEW:        string(viewRaw),
 		ATTRIBUTE_DEPLOYED:    deployed,
+		ATTRIBUTE_PAUSED:      paused,
 	}, nil
 }
 
@@ -222,6 +233,12 @@ func (w *workflowImplementation) SetView(view map[string]any) WorkflowInterface 
 func (w *workflowImplementation) GetDeployed() bool { return w.deployed }
 func (w *workflowImplementation) SetDeployed(deployed bool) WorkflowInterface {
 	w.deployed = deployed
+	return w
+}
+
+func (w *workflowImplementation) GetPaused() bool { return w.paused }
+func (w *workflowImplementation) SetPaused(paused bool) WorkflowInterface {
+	w.paused = paused
 	return w
 }
 

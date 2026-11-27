@@ -15,7 +15,7 @@ func (st *Store) WorkflowCount(ctx context.Context, query WorkflowQueryInterface
 	// entitystore can only count on entity columns; the deployed filter is
 	// an attribute, so counting with it still requires loading the list
 	// (documented limitation — same as the workflow_id counts).
-	if query.HasDeployed() {
+	if query.HasDeployed() || query.HasPaused() {
 		list, err := st.WorkflowList(ctx, query.WithCountOnly(true))
 		if err != nil {
 			return 0, err
@@ -142,6 +142,9 @@ func (st *Store) WorkflowList(ctx context.Context, query WorkflowQueryInterface)
 			return nil, err
 		}
 		if query.HasDeployed() && workflow.GetDeployed() != query.GetDeployed() {
+			continue
+		}
+		if query.HasPaused() && workflow.GetPaused() != query.GetPaused() {
 			continue
 		}
 		matched = append(matched, workflow)

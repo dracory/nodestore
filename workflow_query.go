@@ -19,6 +19,10 @@ type WorkflowQueryInterface interface {
 	GetDeployed() bool
 	WithDeployed(deployed bool) WorkflowQueryInterface
 
+	HasPaused() bool
+	GetPaused() bool
+	WithPaused(paused bool) WorkflowQueryInterface
+
 	HasLimit() bool
 	GetLimit() uint64
 	WithLimit(limit uint64) WorkflowQueryInterface
@@ -43,6 +47,8 @@ type workflowQueryImplementation struct {
 	hasName   bool
 	deployed  bool
 	hasDeploy bool
+	paused    bool
+	hasPaused bool
 	limit     uint64
 	hasLimit  bool
 	offset    uint64
@@ -76,6 +82,13 @@ func (q *workflowQueryImplementation) HasDeployed() bool { return q.hasDeploy }
 func (q *workflowQueryImplementation) GetDeployed() bool { return q.deployed }
 func (q *workflowQueryImplementation) WithDeployed(deployed bool) WorkflowQueryInterface {
 	q.deployed, q.hasDeploy = deployed, true
+	return q
+}
+
+func (q *workflowQueryImplementation) HasPaused() bool { return q.hasPaused }
+func (q *workflowQueryImplementation) GetPaused() bool { return q.paused }
+func (q *workflowQueryImplementation) WithPaused(paused bool) WorkflowQueryInterface {
+	q.paused, q.hasPaused = paused, true
 	return q
 }
 
