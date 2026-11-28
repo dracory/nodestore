@@ -26,6 +26,10 @@ Query builders (`WorkflowQuery`, `NodeQuery`, `EdgeQuery`,
 Also included:
 
 - Node-RED flow JSON import/export (type-name mapping both ways)
+- DOT/Graphviz workflow export via `ExportDOT(workflow, statuses)`: a pure,
+  deterministic text transformation of the domain model with no I/O or
+  rendering dependency. Pass `nil` for a structural graph, or a
+  node-ID-to-status map to color nodes by runtime status.
 - Component/child-flow composition helpers
 - Key/value config store (global env, editor settings)
 

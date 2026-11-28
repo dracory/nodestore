@@ -46,6 +46,15 @@ const ATTRIBUTE_EDGES = "edges"         // legacy: JSON blob on workflow entitie
 const ATTRIBUTE_NODES = "nodes"         // legacy: JSON blob on workflow entities
 const ATTRIBUTE_TIMESTAMP = "timestamp" // legacy: duplicated entity created_at on messages
 
+// Node status vocabulary produced by workflow runners. These values are
+// storage/domain vocabulary, not engine implementation details: exporters,
+// admin surfaces and runners can share them without reversing the import
+// direction. NodeStatusOK is the current completion value produced by
+// noderun; renaming it is a separate standardization decision.
+const NodeStatusRunning = "running"
+const NodeStatusOK = "ok"
+const NodeStatusError = "error"
+
 const ASC = "asc"
 const DESC = "desc"
 
