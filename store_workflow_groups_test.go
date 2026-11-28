@@ -51,8 +51,14 @@ func TestWorkflowGroupsEntityCutover(t *testing.T) {
 	for _, tc := range []struct{ nodeID, groupID string }{
 		{"n1", "g1"}, {"n2", "g1"}, {"n3", "g2"},
 	} {
-		n, _ := store.NodeFindByID(ctx, tc.nodeID)
-		if n == nil || n.GetGroupID() != tc.groupID {
+		n, err := store.NodeFindByID(ctx, tc.nodeID)
+		if err != nil {
+			t.Fatalf("find node %s: %v", tc.nodeID, err)
+		}
+		if n == nil {
+			t.Fatalf("node %s not found", tc.nodeID)
+		}
+		if n.GetGroupID() != tc.groupID {
 			t.Fatalf("node %s group_id=%q want %q", tc.nodeID, n.GetGroupID(), tc.groupID)
 		}
 	}
@@ -108,18 +114,36 @@ func TestWorkflowGroupsEntityCutover(t *testing.T) {
 	if len(groups) != 1 || groups[0].GetName() != "Renamed" {
 		t.Fatalf("converged groups: %d %v", len(groups), groups)
 	}
-	n2, _ := store.NodeFindByID(ctx, "n2")
+	n2, err := store.NodeFindByID(ctx, "n2")
+	if err != nil {
+		t.Fatalf("find n2: %v", err)
+	}
+	if n2 == nil {
+		t.Fatal("find n2: node not found")
+	}
 	if n2.GetGroupID() != "" {
 		t.Fatalf("removed member must be cleared, got %q", n2.GetGroupID())
 	}
-	n3, _ := store.NodeFindByID(ctx, "n3")
+	n3, err := store.NodeFindByID(ctx, "n3")
+	if err != nil {
+		t.Fatalf("find n3: %v", err)
+	}
+	if n3 == nil {
+		t.Fatal("find n3: node not found")
+	}
 	if n3.GetGroupID() != "g1" {
 		t.Fatalf("moved member must be re-stamped, got %q", n3.GetGroupID())
 	}
 
 	// A view without a "groups" key leaves group state alone
 	// (deploy-flag flips etc. must not clobber entities).
-	loaded2, _ := store.WorkflowFindByID(ctx, "wf1")
+	loaded2, err := store.WorkflowFindByID(ctx, "wf1")
+	if err != nil {
+		t.Fatalf("reload without groups: %v", err)
+	}
+	if loaded2 == nil {
+		t.Fatal("reload without groups: workflow not found")
+	}
 	loaded2.SetView(map[string]any{"theme": "light"})
 	if err := store.WorkflowUpdate(ctx, loaded2); err != nil {
 		t.Fatalf("update without groups: %v", err)
@@ -195,7 +219,13 @@ func TestMigrationPipelineFromLegacyBlobs(t *testing.T) {
 	if len(groups) != 1 || groups[0].GetID() != "g1" {
 		t.Fatalf("node_group entity: %v", groups)
 	}
-	n1, _ := store.NodeFindByID(ctx, "n1")
+	n1, err := store.NodeFindByID(ctx, "n1")
+	if err != nil {
+		t.Fatalf("find n1: %v", err)
+	}
+	if n1 == nil {
+		t.Fatal("find n1: node not found")
+	}
 	if n1.GetGroupID() != "g1" {
 		t.Fatalf("membership: %q", n1.GetGroupID())
 	}
@@ -223,7 +253,13 @@ func TestMigrationPipelineFromLegacyBlobs(t *testing.T) {
 	if c, _ := store.NodeGroupCount(ctx, NodeGroupQuery()); c != 1 {
 		t.Fatalf("rerun duplicated groups: %d", c)
 	}
-	wf2, _ := store.WorkflowFindByID(ctx, "legacy-wf")
+	wf2, err := store.WorkflowFindByID(ctx, "legacy-wf")
+	if err != nil {
+		t.Fatalf("rerun reload: %v", err)
+	}
+	if wf2 == nil {
+		t.Fatal("rerun reload: workflow not found")
+	}
 	if len(wf2.GetNodes()) != 2 || len(wf2.GetEdges()) != 1 {
 		t.Fatal("rerun corrupted the graph")
 	}

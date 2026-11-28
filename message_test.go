@@ -42,7 +42,13 @@ func TestMessageCreateFindUpdate(t *testing.T) {
 	if err := store.MessageUpdate(ctx, found); err != nil {
 		t.Fatal("update:", err)
 	}
-	reloaded, _ := store.MessageFindByID(ctx, message.GetID())
+	reloaded, err := store.MessageFindByID(ctx, message.GetID())
+	if err != nil {
+		t.Fatal("reload:", err)
+	}
+	if reloaded == nil {
+		t.Fatal("reload: message not found")
+	}
 	if reloaded.GetError() != nil {
 		t.Fatal("error should be cleared")
 	}
@@ -83,6 +89,9 @@ func TestMessageBinaryPayloadDurableRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal("find:", err)
 	}
+	if found == nil {
+		t.Fatal("find: message not found")
+	}
 	payload, ok := found.GetPayload().([]byte)
 	if !ok {
 		t.Fatalf("payload is %T, want []byte", found.GetPayload())
@@ -106,6 +115,9 @@ func TestMessageNestedBinaryPayloadDurableRoundTrip(t *testing.T) {
 	found, err := store.MessageFindByID(ctx, message.GetID())
 	if err != nil {
 		t.Fatal("find:", err)
+	}
+	if found == nil {
+		t.Fatal("find: message not found")
 	}
 	payload, ok := found.GetPayload().(map[string]any)
 	if !ok {
@@ -187,6 +199,9 @@ func TestMessageScalarPayloadRoundTripsRemainUnchanged(t *testing.T) {
 			found, err := store.MessageFindByID(ctx, message.GetID())
 			if err != nil {
 				t.Fatal("find:", err)
+			}
+			if found == nil {
+				t.Fatal("find: message not found")
 			}
 			if !reflect.DeepEqual(found.GetPayload(), tt.want) {
 				t.Fatalf("payload = %#v (%T), want %#v (%T)", found.GetPayload(), found.GetPayload(), tt.want, tt.want)

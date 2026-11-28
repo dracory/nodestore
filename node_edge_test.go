@@ -96,7 +96,13 @@ func TestNodeEdgeCRUD(t *testing.T) {
 	if err := store.NodeUpdate(ctx, found); err != nil {
 		t.Fatal("node update:", err)
 	}
-	reloaded, _ := store.NodeFindByID(ctx, "n1")
+	reloaded, err := store.NodeFindByID(ctx, "n1")
+	if err != nil {
+		t.Fatal("node reload:", err)
+	}
+	if reloaded == nil {
+		t.Fatal("node reload: node not found")
+	}
 	if reloaded.GetPositionX() != 50 || reloaded.GetType() != "debug" {
 		t.Fatal("node update round-trip mismatch")
 	}
@@ -149,9 +155,18 @@ func TestWorkflowChildSync(t *testing.T) {
 		t.Fatal("create:", err)
 	}
 
-	found, _ := store.WorkflowFindByID(ctx, workflow.GetID())
+	found, err := store.WorkflowFindByID(ctx, workflow.GetID())
+	if err != nil {
+		t.Fatal("find:", err)
+	}
+	if found == nil {
+		t.Fatal("find: workflow not found")
+	}
 	// Remove n2, move n1, add n3.
 	n1 := found.FindNodeByID("n1")
+	if n1 == nil {
+		t.Fatal("find: node n1 not found")
+	}
 	n1.SetPosition(99, 99)
 	found.SetNodes([]NodeInterface{n1, NewNode("n3", "function")})
 	if err := store.WorkflowUpdate(ctx, found); err != nil {
@@ -169,7 +184,13 @@ func TestWorkflowChildSync(t *testing.T) {
 	if !ids["n1"] || !ids["n3"] || ids["n2"] {
 		t.Fatal("child sync mismatch:", ids)
 	}
-	reloadedN1, _ := store.NodeFindByID(ctx, "n1")
+	reloadedN1, err := store.NodeFindByID(ctx, "n1")
+	if err != nil {
+		t.Fatal("reload n1:", err)
+	}
+	if reloadedN1 == nil {
+		t.Fatal("reload n1: node not found")
+	}
 	if reloadedN1.GetPositionX() != 99 {
 		t.Fatal("n1 position update did not persist independently")
 	}
@@ -178,12 +199,24 @@ func TestWorkflowChildSync(t *testing.T) {
 	}
 
 	// Independent node update does not touch siblings.
-	n3, _ := store.NodeFindByID(ctx, "n3")
+	n3, err := store.NodeFindByID(ctx, "n3")
+	if err != nil {
+		t.Fatal("find n3:", err)
+	}
+	if n3 == nil {
+		t.Fatal("find n3: node not found")
+	}
 	n3.SetData(map[string]any{"x": 1})
 	if err := store.NodeUpdate(ctx, n3); err != nil {
 		t.Fatal("node update:", err)
 	}
-	reloadedN1b, _ := store.NodeFindByID(ctx, "n1")
+	reloadedN1b, err := store.NodeFindByID(ctx, "n1")
+	if err != nil {
+		t.Fatal("reload n1:", err)
+	}
+	if reloadedN1b == nil {
+		t.Fatal("reload n1: node not found")
+	}
 	if reloadedN1b.GetPositionX() != 99 || len(reloadedN1b.GetData()) != 0 {
 		t.Fatal("sibling node was affected by independent update")
 	}

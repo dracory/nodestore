@@ -351,7 +351,11 @@ func TestComponentDefExportImport(t *testing.T) {
 	}
 	// An instance of the imported definition references it correctly.
 	dst.AddNode(NewNode("inst1", "component:"+newDefID).SetData(map[string]any{}))
-	def := findDef(dst, strings.TrimPrefix(nodeByID(dst, "inst1").GetType(), componentTypePrefix))
+	instance := nodeByID(dst, "inst1")
+	if instance == nil {
+		t.Fatal("imported instance missing")
+	}
+	def := findDef(dst, strings.TrimPrefix(instance.GetType(), componentTypePrefix))
 	if def == nil {
 		t.Fatal("instance references missing definition")
 	}

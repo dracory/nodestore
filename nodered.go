@@ -253,7 +253,7 @@ func ImportNodeRED(data []byte) (WorkflowInterface, error) {
 	// Merge tab envs into the workflow-level env table (view.env).
 	// Names deduplicate later-wins, preserving first-seen order.
 	if len(tabEnv) > 0 {
-		var merged []any
+		merged := make([]any, 0, len(tabEnv))
 		seen := map[string]int{}
 		for _, raw := range tabEnv {
 			m, ok := raw.(map[string]any)

@@ -115,6 +115,9 @@ func TestNodeREDTypeMapping(t *testing.T) {
 
 	// The unknown node keeps its config verbatim.
 	unk := nodeByType(w, "fancy-widget")
+	if unk == nil {
+		t.Fatal("unknown node missing after import")
+	}
 	if unk.GetData()["conf"] != float64(1) {
 		t.Errorf("unknown node lost config: %v", unk.GetData())
 	}

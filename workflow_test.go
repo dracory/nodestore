@@ -58,7 +58,13 @@ func TestWorkflowCreateFindUpdate(t *testing.T) {
 	if err := store.WorkflowUpdate(ctx, found); err != nil {
 		t.Fatal("update:", err)
 	}
-	reloaded, _ := store.WorkflowFindByID(ctx, workflow.GetID())
+	reloaded, err := store.WorkflowFindByID(ctx, workflow.GetID())
+	if err != nil {
+		t.Fatal("reload:", err)
+	}
+	if reloaded == nil {
+		t.Fatal("reload: workflow not found")
+	}
 	if reloaded.GetDescription() != "updated" || reloaded.GetDeployed() || reloaded.GetPaused() {
 		t.Fatal("update round-trip mismatch")
 	}

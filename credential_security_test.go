@@ -29,7 +29,11 @@ func newTestStoreWithCipher(t *testing.T, cipher CredentialCipher) *Store {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	})
 	return st
 }
 
@@ -58,7 +62,10 @@ func TestCredentialCipherRoundTrip(t *testing.T) {
 		t.Fatalf("legacy passthrough failed: %q %v", plain, err)
 	}
 	// Wrong key fails closed.
-	other, _ := NewAESCredentialCipher([]byte("abcdef0123456789abcdef0123456789"))
+	other, err := NewAESCredentialCipher([]byte("abcdef0123456789abcdef0123456789"))
+	if err != nil {
+		t.Fatalf("wrong-key cipher construction: %v", err)
+	}
 	if _, err := other.Decrypt(sealed); err == nil {
 		t.Fatal("decrypt with wrong key succeeded")
 	}
@@ -102,6 +109,9 @@ func TestCredentialEncryptedAtRest(t *testing.T) {
 	got, err := st.CredentialFindByID(ctx, cred.GetID())
 	if err != nil {
 		t.Fatalf("find: %v", err)
+	}
+	if got == nil {
+		t.Fatal("find: credential not found")
 	}
 	if got.GetValue("password") != "hunter2" {
 		t.Fatalf("decrypted value mismatch: %v", got.GetValues())
